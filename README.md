@@ -104,7 +104,9 @@ chmod +x zviewer-cli-darwin-arm64
 默认行为：
 
 - 本地 HTTP 服务监听 `http://127.0.0.1:9333`
-- 自动打开浏览器配置页面
+- 仅启动命令行，不自动打开浏览器（如需自动打开，添加 `-no-open=false`）
+
+手动访问 `http://127.0.0.1:9333` 进入配置页面。
 
 ### 3. 配置并连接
 
@@ -231,35 +233,122 @@ GET /api/qr/poll?qrcode_key=xxx
 ### 环境要求
 
 - Go 1.22.5 或更高版本
+- （可选）[UPX](https://upx.github.io/) — 用于压缩可执行文件，减小体积
 
-### 本地构建
+### 快速编译（不压缩）
 
 ```bash
 # 克隆代码
 cd ZViewerCLI
 
-# 编译当前平台
+# 编译当前平台（调试/开发用）
 go build -o zviewer-cli .
 
 # 运行
 ./zviewer-cli
 ```
 
-### 交叉编译
+### 优化编译（推荐）
+
+使用 `-ldflags="-s -w"` 和 `-trimpath` 移除调试信息与路径信息，显著减小体积：
 
 ```bash
-# Windows
-go build -o zviewer-cli-windows-amd64.exe .
+go build -ldflags="-s -w" -trimpath -o zviewer-cli .
+```
 
-# Linux
-GOOS=linux GOARCH=amd64 go build -o zviewer-cli-linux-amd64 .
+### 使用 UPX 压缩
+
+[UPX](https://upx.github.io/) 是一个可执行文件压缩工具，能将二进制体积压缩至原来的 30% 左右，适合分发场景。
+
+#### 安装 UPX
+
+**Windows（推荐）**：从 [UPX Releases](https://github.com/upx/upx/releases) 下载 `upx-5.0.0-win64.zip`，解压后即可使用。
+
+```powershell
+# 下载并解压 UPX
+curl -LJO https://github.com/upx/upx/releases/download/v5.0.0/upx-5.0.0-win64.zip
+Expand-Archive -Path upx-5.0.0-win64.zip -DestinationPath upx
+```
+
+**macOS**：
+```bash
+brew install upx
+```
+
+**Linux**：
+```bash
+sudo apt install upx       # Debian/Ubuntu
+sudo pacman -S upx          # Arch Linux
+```
+
+#### 压缩命令
+
+基本压缩（Linux/macOS 即可）：
+```bash
+upx --lzma zviewer-cli
+```
+
+极限压缩（推荐 Windows 使用）：
+```bash
+upx --best --lzma zviewer-cli.exe
+```
+
+> 注意：UPX 不支持压缩 macOS 可执行文件，macOS 版本跳过 UPX 步骤。
+
+### 交叉编译
+
+使用 `GOOS`/`GOARCH` 环境变量为其他平台编译：
+
+```bash
+# Windows amd64
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-windows-amd64.exe .
+
+# Linux amd64
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-linux-amd64 .
+
+# Linux arm64
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-linux-arm64 .
 
 # macOS Intel
-GOOS=darwin GOARCH=amd64 go build -o zviewer-cli-darwin-amd64 .
+GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-darwin-amd64 .
 
 # macOS Apple Silicon
-GOOS=darwin GOARCH=arm64 go build -o zviewer-cli-darwin-arm64 .
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-darwin-arm64 .
 ```
+
+交叉编译后使用 UPX 压缩（仅 Windows 和 Linux）：
+
+```bash
+# Windows 极限压缩
+upx --best --lzma zviewer-cli-windows-amd64.exe
+
+# Linux 正常压缩
+upx --lzma zviewer-cli-linux-amd64
+upx --lzma zviewer-cli-linux-arm64
+```
+
+### 一键编译脚本
+
+项目提供了 `build.ps1` 脚本，自动完成所有平台的交叉编译与压缩：
+
+```powershell
+# 确保 Go 已安装，UPX 可选
+.\build.ps1
+```
+
+脚本执行以下操作：
+
+| 平台 | 压缩方式 | 预期大小 |
+|------|---------|---------|
+| Windows amd64 | UPX `--best --lzma`（极限压缩） | ~2.4 MB |
+| Linux amd64 | UPX `--lzma`（正常压缩） | ~2.3 MB |
+| Linux arm64 | UPX `--lzma`（正常压缩） | ~2.0 MB |
+| macOS amd64 | 跳过 UPX | ~7.5 MB |
+| macOS arm64 | 跳过 UPX | ~7.0 MB |
+
+编译产物输出到 `%TEMP%\zviewer-cli-dist\` 目录。
+
+> 脚本会自动查找 UPX：优先使用参数 `-UPXPath` 指定的路径，其次查找 PATH 环境变量，最后检查常见默认路径。也可通过 `.\build.ps1 -UPXPath "D:\tools\upx.exe"` 手动指定。
 
 ---
 
@@ -278,6 +367,7 @@ ZViewerCLI/
 ├── config.go         # 本地配置文件持久化
 ├── state.go          # 运行时状态管理
 ├── speedlog.go       # 代理流量日志
+├── build.ps1         # 一键交叉编译脚本（含 UPX 压缩）
 ├── go.mod            # Go 模块依赖
 ├── dist/             # 预编译的多平台二进制文件
 └── m4s_head.bin      # m4s 初始化段模板
@@ -312,9 +402,9 @@ ZViewer 主项目负责房间状态同步、用户管理、播放控制；ZViewe
 
 ## 常见问题
 
-### 启动后无法自动打开浏览器
+### 启动后浏览器未自动打开
 
-使用 `-no-open` 跳过自动打开，手动访问 `http://127.0.0.1:9333`。
+默认不自动打开浏览器，请手动访问 `http://127.0.0.1:9333`。如需自动打开，启动时添加 `-no-open=false`。
 
 ### Cookie 验证失败
 

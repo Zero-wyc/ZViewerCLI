@@ -1,10 +1,16 @@
-# ZViewer CLI build script
-# Windows: extreme UPX compression (--best --lzma)
-# Linux: normal UPX compression (--lzma)
-# macOS: no UPX (not supported)
+# ZViewer CLI 一键编译脚本
+# 自动交叉编译所有平台：
+#   Windows → UPX --best --lzma（极限压缩）
+#   Linux   → UPX --lzma（正常压缩）
+#   macOS   → 跳过 UPX（不支持）
+#
+# 用法: .\build.ps1
+
+param(
+    [string]$UPXPath = ""  # 留空则自动查找 PATH 或默认路径
+)
 
 $C_GO = "C:\Program Files\Go\bin\go.exe"
-$C_UPX = "C:\Users\Zero_\AppData\Local\Temp\upx\upx-5.0.0-win64\upx.exe"
 $C_DIST = Join-Path $env:TEMP "zviewer-cli-dist"
 $C_VER = "0.1.0"
 
@@ -16,23 +22,43 @@ function Write-Info  { Write-Host "$L_INFO $args" -ForegroundColor Cyan }
 function Write-Ok    { Write-Host "$L_OK   $args" -ForegroundColor Green }
 function Write-Error { Write-Host "$L_ERR $args" -ForegroundColor Red }
 
+# 清理并创建输出目录
 if (Test-Path $C_DIST) { Remove-Item -Recurse -Force $C_DIST }
 New-Item -ItemType Directory -Path $C_DIST -Force | Out-Null
 
+# 检查 Go
 if (-not (Test-Path $C_GO)) {
-    Write-Error "Go not found: $C_GO"
+    Write-Error "Go not found at: $C_GO`nInstall Go from https://go.dev/dl/ or update `$C_GO in this script."
     exit 1
 }
-
 $goVer = & $C_GO version
 Write-Info "Go version: $goVer"
 
-$hasUPX = Test-Path $C_UPX
+# 查找 UPX
+$C_UPX = ""
+if ($UPXPath -and (Test-Path $UPXPath)) {
+    $C_UPX = $UPXPath
+} elseif (Get-Command "upx" -ErrorAction SilentlyContinue) {
+    $C_UPX = (Get-Command "upx").Source
+} else {
+    # 常见默认路径
+    $defaultPaths = @(
+        "$env:USERPROFILE\AppData\Local\Temp\upx\upx-5.0.0-win64\upx.exe",
+        "$env:USERPROFILE\scoop\shims\upx.exe",
+        "C:\ProgramData\chocolatey\bin\upx.exe"
+    )
+    foreach ($p in $defaultPaths) {
+        if (Test-Path $p) { $C_UPX = $p; break }
+    }
+}
+
+$hasUPX = ($C_UPX -ne "" -and (Test-Path $C_UPX))
 if ($hasUPX) {
     $uv = & $C_UPX --version | Select-String "UPX" | Select-Object -First 1
+    Write-Info "UPX: $C_UPX"
     Write-Info "UPX version: $uv"
 } else {
-    Write-Info "UPX not found, skip compression"
+    Write-Info "UPX not found, skip compression. Install from: https://github.com/upx/upx/releases"
 }
 
 function Build-Binary {
@@ -58,6 +84,7 @@ function Build-Binary {
     $beforeSize = (Get-Item $outputPath).Length
     Write-Info "  built: $([math]::Round($beforeSize / 1KB)) KB"
 
+    # macOS 不支持 UPX
     if ($TargetOS -eq "darwin") {
         Write-Ok ("  ${binaryName}: $([math]::Round($beforeSize / 1KB)) KB (macOS skip UPX)")
         Remove-Item env:GOOS, env:GOARCH, env:CGO_ENABLED -ErrorAction SilentlyContinue

@@ -5,245 +5,159 @@ const setupPageHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZViewer CLI 配置</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>ZViewer CLI</title>
   <style>
-    :root {
-      --md-sys-shape-corner: 16px;
-      --md-sys-color-surface: #0b1015;
-      --md-sys-color-surface-container: #111920;
-      --md-sys-color-surface-container-high: #19232c;
-      --md-sys-color-surface-container-highest: #222e3a;
-      --md-sys-color-primary: #5fa8f8;
-      --md-sys-color-on-primary: #ffffff;
-      --md-sys-color-primary-container: #00447d;
-      --md-sys-color-on-primary-container: #cfe4ff;
-      --md-sys-color-secondary: #8fcafc;
-      --md-sys-color-on-secondary: #002e5f;
-      --md-sys-color-tertiary: #a890f8;
-      --md-sys-color-on-tertiary: #ffffff;
-      --md-sys-color-on-surface: #e2e8f0;
-      --md-sys-color-on-surface-variant: #94a3b8;
-      --md-sys-color-outline: #475569;
-      --md-sys-color-outline-variant: #334155;
-      --md-sys-color-error: #f87171;
-      --md-sys-color-on-error: #ffffff;
-      --md-sys-color-error-container: #451515;
-      --md-sys-color-success: #34d399;
-      --glass-bg: rgba(17, 25, 32, 0.74);
-      --glass-border: rgba(148, 163, 184, 0.16);
-      --glass-blur: 18px;
+:root {
+      --bg: #0b0e12;
+      --surface: #11161d;
+      --surface-raised: #171d25;
+      --surface-hover: #1d242d;
+      --border: #202831;
+      --border-strong: #2a343f;
+      --text: #e8eaed;
+      --text-muted: #8b949e;
+      --text-subtle: #5f6b7a;
+      --accent: #2dd4bf;
+      --accent-hover: #5eead4;
+      --accent-text: #042f2e;
+      --warn: #f59e0b;
+      --error: #ef4444;
+      --error-dim: #fca5a5;
+      --success: #22c55e;
+      --success-dim: #86efac;
+      --radius: 10px;
+      --radius-sm: 8px;
+      --shadow: 0 1px 2px rgba(0,0,0,0.25), 0 4px 12px rgba(0,0,0,0.15);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background:
-        radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in srgb, var(--md-sys-color-primary) 22%, transparent), transparent),
-        var(--md-sys-color-surface);
-      color: var(--md-sys-color-on-surface);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #05070a;
+      background-image:
+        linear-gradient(rgba(5,7,10,0.5), rgba(5,7,10,0.5)),
+        url('/Nacho.webp');
+      background-position: center, center;
+      background-size: cover, cover;
+      background-attachment: fixed, fixed;
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       justify-content: center;
-      padding: 40px 18px;
+      padding: 48px 18px;
       line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
-    .container {
-      width: 100%;
-      max-width: 520px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+    .container { width: 100%; max-width: 540px; display: flex; flex-direction: column; gap: 18px; }
+    .header { display: flex; align-items: center; gap: 14px; padding-bottom: 8px; }
+    .brand-icon {
+      width: 44px; height: 44px; border-radius: var(--radius-sm);
+      background: var(--surface); border: 1px solid var(--border-strong);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent); flex-shrink: 0;
+      box-shadow: var(--shadow);
     }
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 4px;
-    }
-    .icon-wrap {
-      width: 48px;
-      height: 48px;
-      border-radius: var(--md-sys-shape-corner);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      background: linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--md-sys-color-tertiary) 28%, transparent),
-        color-mix(in srgb, var(--md-sys-color-secondary) 22%, transparent)
-      );
-      box-shadow: 0 4px 16px color-mix(in srgb, var(--md-sys-color-primary) 22%, transparent);
-    }
-    .icon-wrap svg { width: 26px; height: 26px; color: var(--md-sys-color-tertiary); }
+    .brand-icon svg { width: 22px; height: 22px; }
     .header-text { display: flex; flex-direction: column; gap: 2px; }
-    .header-title { font-size: 22px; font-weight: 700; color: var(--md-sys-color-on-surface); letter-spacing: -0.02em; }
-    .header-subtitle { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--md-sys-color-on-surface-variant); }
+    .header-title { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+    .header-subtitle { font-size: 13px; color: var(--text-muted); }
     .card {
-      background: var(--glass-bg);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      border: 1px solid var(--glass-border);
-      border-radius: var(--md-sys-shape-corner);
-      padding: 24px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+      background: rgba(17, 22, 29, 0.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow);
     }
     .section-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--md-sys-color-on-surface);
-      margin-bottom: 18px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      font-size: 14px; font-weight: 600; color: var(--text);
+      margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
     }
-    .section-title::before {
-      content: '';
-      width: 4px;
-      height: 16px;
-      border-radius: 999px;
-      background: var(--md-sys-color-primary);
-    }
-    .field { margin-bottom: 18px; }
+    .section-title svg { width: 16px; height: 16px; color: var(--text-subtle); flex-shrink: 0; }
+    .field { margin-bottom: 16px; }
     .field:last-child { margin-bottom: 0; }
     .field label {
-      display: block;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--md-sys-color-on-surface-variant);
-      margin-bottom: 8px;
+      display: block; font-size: 13px; font-weight: 500;
+      color: var(--text-muted); margin-bottom: 6px;
     }
-    .input, .textarea {
-      width: 100%;
-      background: color-mix(in srgb, var(--md-sys-color-surface-container) 86%, transparent);
-      border: 1px solid var(--md-sys-color-outline-variant);
-      border-radius: 12px;
-      padding: 12px 14px;
-      color: var(--md-sys-color-on-surface);
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+    .input, .textarea, select.input {
+      width: 100%; background: rgba(5, 7, 10, 0.55); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-sm); padding: 10px 12px; color: var(--text);
+      font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s;
     }
-    .input::placeholder, .textarea::placeholder { color: var(--md-sys-color-on-surface-variant); opacity: 0.6; }
-    .input:focus, .textarea:focus {
-      border-color: var(--md-sys-color-primary);
-      background: color-mix(in srgb, var(--md-sys-color-surface-container) 96%, transparent);
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
-    }
-    .textarea { min-height: 90px; resize: vertical; font-family: 'SF Mono', 'Cascadia Mono', 'Fira Code', monospace; font-size: 12px; }
+    .input::placeholder, .textarea::placeholder { color: var(--text-subtle); }
+    .input:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(45,212,191,0.12); }
+    .textarea { min-height: 84px; resize: vertical; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; }
+    select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 32px; }
     .row { display: flex; gap: 12px; }
     .row .field { flex: 1; }
     .btn {
-      width: 100%;
-      border: none;
-      border-radius: 12px;
-      padding: 14px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s, opacity 0.15s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
+      width: 100%; border: none; border-radius: var(--radius-sm); padding: 11px 14px;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22); }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
     .btn:active:not(:disabled) { transform: translateY(0); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
-    .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 22px color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent); }
-    .btn-secondary {
-      background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 70%, transparent);
-      color: var(--md-sys-color-on-surface);
-      border: 1px solid var(--glass-border);
-    }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: var(--accent-text); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-secondary { background: var(--surface-raised); color: var(--text); border: 1px solid var(--border-strong); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-danger { background: transparent; color: var(--error-dim); border: 1px solid var(--border-strong); }
+    .btn-danger:hover:not(:disabled) { border-color: var(--error); color: var(--error); background: rgba(239,68,68,0.06); }
+    .btn-row { display: flex; gap: 10px; }
+    .btn-row .btn { width: auto; flex: 1; }
     .qr-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      margin-top: 20px;
-      padding: 20px;
-      background: color-mix(in srgb, var(--md-sys-color-surface-container) 60%, transparent);
-      border-radius: 12px;
-      border: 1px dashed var(--md-sys-color-outline);
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      margin-top: 16px; padding: 18px; background: rgba(5, 7, 10, 0.5);
+      border-radius: var(--radius-sm); border: 1px dashed rgba(255,255,255,0.12);
     }
-    .qr-wrap img {
-      width: 200px;
-      height: 200px;
-      border-radius: 12px;
-      background: #fff;
-      padding: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
+    .qr-wrap img { width: 180px; height: 180px; border-radius: var(--radius-sm); background: #fff; padding: 6px; }
     .status {
-      font-size: 13px;
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: color-mix(in srgb, var(--md-sys-color-surface-container) 70%, transparent);
-      border: 1px solid var(--glass-border);
-      word-break: break-word;
+      font-size: 13px; padding: 10px 12px; border-radius: var(--radius-sm);
+      background: rgba(23, 29, 37, 0.72); border: 1px solid rgba(255,255,255,0.07);
+      border-left: 3px solid var(--border-strong); word-break: break-word;
     }
-    .status.error { color: var(--md-sys-color-error); border-color: color-mix(in srgb, var(--md-sys-color-error) 40%, transparent); background: color-mix(in srgb, var(--md-sys-color-error-container) 80%, transparent); }
-    .status.success { color: var(--md-sys-color-success); border-color: color-mix(in srgb, var(--md-sys-color-success) 40%, transparent); background: color-mix(in srgb, var(--md-sys-color-success) 10%, transparent); }
+    .status.error { border-left-color: var(--error); color: var(--error-dim); }
+    .status.success { border-left-color: var(--success); color: var(--success-dim); }
     .hidden { display: none !important; }
-    .hint { font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-top: 12px; line-height: 1.6; }
-    .cookie-state { font-size: 12px; font-weight: 500; margin-top: 8px; }
-    .cookie-state.empty { color: var(--md-sys-color-on-surface-variant); }
-    .cookie-state.valid { color: var(--md-sys-color-success); }
-    .cookie-state.invalid { color: var(--md-sys-color-error); }
-    .footer { text-align: center; font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-top: 8px; }
+    .hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }
+    .cookie-state { font-size: 12px; font-weight: 500; margin-top: 6px; }
+    .cookie-state.empty { color: var(--text-subtle); }
+    .cookie-state.valid { color: var(--success); }
+    .cookie-state.invalid { color: var(--error); }
+    .footer { text-align: center; font-size: 12px; color: var(--text-subtle); margin-top: 8px; }
     .test-player-wrap {
-      margin-top: 16px;
-      border-radius: 12px;
-      overflow: hidden;
-      background: #000;
-      aspect-ratio: 16 / 9;
-      display: none;
+      margin-top: 16px; border-radius: var(--radius-sm); overflow: hidden;
+      background: #000; aspect-ratio: 16 / 9; display: none; border: 1px solid var(--border);
     }
     .test-player-wrap video { width: 100%; height: 100%; display: block; }
     .test-info {
-      margin-top: 12px;
-      font-size: 12px;
-      font-family: 'SF Mono', 'Cascadia Mono', 'Fira Code', monospace;
-      padding: 12px;
-      border-radius: 8px;
-      background: color-mix(in srgb, var(--md-sys-color-surface-container) 70%, transparent);
-      border: 1px solid var(--glass-border);
-      max-height: 200px;
-      overflow-y: auto;
-      display: none;
-      line-height: 1.6;
-      word-break: break-all;
-      white-space: pre-wrap;
+      margin-top: 12px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      padding: 12px; border-radius: var(--radius-sm); background: rgba(5, 7, 10, 0.55);
+      border: 1px solid rgba(255,255,255,0.08); max-height: 220px; overflow-y: auto;
+      display: none; line-height: 1.6; word-break: break-all; white-space: pre-wrap;
     }
     .test-info-row { display: flex; gap: 8px; padding: 2px 0; }
-    .test-info-label { color: var(--md-sys-color-on-surface-variant); min-width: 80px; flex-shrink: 0; }
-    .test-info-value { color: var(--md-sys-color-on-surface); }
-    .test-info-value.success { color: var(--md-sys-color-success); }
-    .test-info-value.error { color: var(--md-sys-color-error); }
+    .test-info-label { color: var(--text-muted); min-width: 84px; flex-shrink: 0; }
+    .test-info-value { color: var(--text); }
+    .test-info-value.success { color: var(--success); }
+    .test-info-value.error { color: var(--error); }
     .badge {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 999px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .badge-dash { background: color-mix(in srgb, var(--md-sys-color-tertiary) 22%, transparent); color: var(--md-sys-color-tertiary); }
-    .badge-mp4 { background: color-mix(in srgb, var(--md-sys-color-primary) 22%, transparent); color: var(--md-sys-color-primary); }
+    .badge-dash { background: rgba(245,158,11,0.12); color: var(--warn); }
+    .badge-mp4 { background: rgba(45,212,191,0.12); color: var(--accent); }
+    @media (max-width: 480px) {
+      body { padding: 24px 14px; }
+      .card { padding: 18px; }
+      .row { flex-direction: column; gap: 0; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <div class="icon-wrap">
+      <div class="brand-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
           <line x1="8" y1="21" x2="16" y2="21"></line>
@@ -252,12 +166,15 @@ const setupPageHTML = `<!DOCTYPE html>
       </div>
       <div class="header-text">
         <div class="header-title">ZViewer CLI</div>
-        <div class="header-subtitle">本地高画质代理</div>
+        <div class="header-subtitle">本地高画质代理客户端</div>
       </div>
     </div>
 
     <div class="card">
-      <div class="section-title">连接配置</div>
+      <div class="section-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        连接配置
+      </div>
       <div class="row">
         <div class="field">
           <label>后端地址</label>
@@ -289,17 +206,29 @@ const setupPageHTML = `<!DOCTYPE html>
     </div>
 
     <div class="card">
-      <div class="section-title">房间连接</div>
-      <button class="btn btn-primary" id="connectBtn" type="button">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
-        连接房间
-      </button>
+      <div class="section-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        房间连接
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="connectBtn" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+          连接房间
+        </button>
+        <button class="btn btn-danger hidden" id="disconnectBtn" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          断开
+        </button>
+      </div>
       <div class="status hidden" id="connectStatus"></div>
       <div class="hint">连接成功后，可在网页端「B站解析设置」中启用「CLI 高画质代理」。</div>
     </div>
 
     <div class="card">
-      <div class="section-title">视频流测试</div>
+      <div class="section-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        视频流测试
+      </div>
       <div class="field">
         <label>B站视频链接 / BV号</label>
         <input type="text" id="testInput" class="input" placeholder="BV1GJ411x7h7 或 https://www.bilibili.com/video/BV1GJ411x7h7" />
@@ -330,7 +259,7 @@ const setupPageHTML = `<!DOCTYPE html>
           </select>
         </div>
       </div>
-      <button class="btn btn-primary" id="testBtn" type="button">
+      <button class="btn btn-secondary" id="testBtn" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
         解析并播放
       </button>
@@ -344,7 +273,6 @@ const setupPageHTML = `<!DOCTYPE html>
 
     <div class="footer">ZViewer CLI · 本地高画质代理客户端</div>
   </div>
-
   <script>
     const params = new URLSearchParams(location.search)
     const serverEl = document.getElementById('server')
@@ -357,6 +285,16 @@ const setupPageHTML = `<!DOCTYPE html>
     const qrStatus = document.getElementById('qrStatus')
     const connectBtn = document.getElementById('connectBtn')
     const connectStatus = document.getElementById('connectStatus')
+    const disconnectBtn = document.getElementById('disconnectBtn')
+    let roomState = { connected: false, connecting: false }
+
+    function updateDisconnectVisibility() {
+      if (roomState.connected || roomState.connecting) {
+        disconnectBtn.classList.remove('hidden')
+      } else {
+        disconnectBtn.classList.add('hidden')
+      }
+    }
 
     if (params.get('server')) serverEl.value = params.get('server')
     if (params.get('room')) roomEl.value = params.get('room')
@@ -454,6 +392,8 @@ const setupPageHTML = `<!DOCTYPE html>
       if (!cookie) { setStatus(connectStatus, '请先设置 B站 Cookie', 'error'); return }
 
       connectBtn.disabled = true
+      roomState.connecting = true
+      updateDisconnectVisibility()
       setStatus(connectStatus, '正在连接…')
 
       try {
@@ -464,11 +404,32 @@ const setupPageHTML = `<!DOCTYPE html>
         })
         const data = await res.json()
         if (!res.ok || !data.success) throw new Error(data.message || '连接失败')
+        roomState.connected = true
         setStatus(connectStatus, '已连接房间，可在网页启用 CLI 高画质代理', 'success')
       } catch (err) {
         setStatus(connectStatus, err.message, 'error')
       } finally {
         connectBtn.disabled = false
+        roomState.connecting = false
+        updateDisconnectVisibility()
+      }
+    })
+
+    disconnectBtn.addEventListener('click', async () => {
+      disconnectBtn.disabled = true
+      setStatus(connectStatus, '正在断开连接…')
+      try {
+        const res = await fetch('/api/disconnect', { method: 'POST' })
+        const data = await res.json()
+        if (!res.ok || !data.success) throw new Error(data.message || '断开失败')
+        roomState.connected = false
+        roomState.connecting = false
+        setStatus(connectStatus, '已断开房间连接', 'success')
+      } catch (err) {
+        setStatus(connectStatus, err.message, 'error')
+      } finally {
+        disconnectBtn.disabled = false
+        updateDisconnectVisibility()
       }
     })
 
@@ -482,11 +443,18 @@ const setupPageHTML = `<!DOCTYPE html>
           cookieEl.value = data.config.cookie
           updateCookieState(data.cookieValid, data.userInfo && data.userInfo.name)
         }
-        if (data.connected) setStatus(connectStatus, '已连接房间', 'success')
+        roomState.connected = !!data.connected
+        roomState.connecting = !!data.connecting
+        if (roomState.connecting) {
+          connectBtn.disabled = true
+          setStatus(connectStatus, '正在连接…')
+        } else if (roomState.connected) {
+          setStatus(connectStatus, '已连接房间', 'success')
+        }
+        updateDisconnectVisibility()
       })
       .catch(() => {})
 
-    // ===== 视频流测试 =====
     const testInput = document.getElementById('testInput')
     const testQn = document.getElementById('testQn')
     const testFormat = document.getElementById('testFormat')
@@ -548,7 +516,6 @@ const setupPageHTML = `<!DOCTYPE html>
       testLogs = []
       logTest('开始解析')
 
-      // 清理上一次播放
       if (dashPlayer) {
         try { dashPlayer.reset() } catch (e) {}
         try { dashPlayer.release() } catch (e) {}
@@ -562,17 +529,15 @@ const setupPageHTML = `<!DOCTYPE html>
       logTest('BV号: ' + bvid + ', 格式: ' + format)
 
       try {
-        // 1. 获取 cid
         setStatus(testStatus, '正在获取视频信息…')
         const info = await fetchCid(bvid)
         logTest('cid=' + info.cid + ', title=' + info.title)
         setStatus(testStatus, '正在解析视频流…')
 
-        // 2. 调用 CLI /resolve 接口
-        const params = new URLSearchParams({ bvid, cid: String(info.cid), preferMp4: String(preferMp4) })
+        const p = new URLSearchParams({ bvid, cid: String(info.cid), preferMp4: String(preferMp4) })
         const qnVal = testQn.value
-        if (qnVal) params.set('qn', qnVal)
-        const res = await fetch('/resolve?' + params.toString())
+        if (qnVal) p.set('qn', qnVal)
+        const res = await fetch('/resolve?' + p.toString())
         const data = await res.json()
         if (!res.ok || data.error || !data.videoUrl) {
           throw new Error(data.error || data.message || '解析失败')
@@ -598,12 +563,10 @@ const setupPageHTML = `<!DOCTYPE html>
         ]
         renderTestInfo(rows)
 
-        // 3. 播放
         testPlayerWrap.style.display = 'block'
 
         if (isDash) {
           logTest('使用 dash.js 播放 DASH 流')
-          // 动态加载 dash.js
           if (!window.dashjs) {
             logTest('加载 dash.js...')
             await loadScript('https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js')
@@ -613,24 +576,15 @@ const setupPageHTML = `<!DOCTYPE html>
           dashPlayer = dashjs.MediaPlayer().create()
           dashPlayer.updateSettings({
             streaming: {
-              buffer: {
-                fastSwitchEnabled: true,
-                // dash.js 4.7.x 使用 stableBufferTime 控制默认目标缓冲时长
-                stableBufferTime: 2,
-                bufferTimeAtTopQuality: 10,
-                bufferTimeAtTopQualityLongForm: 20
-              },
+              buffer: { fastSwitchEnabled: true, stableBufferTime: 2, bufferTimeAtTopQuality: 10, bufferTimeAtTopQualityLongForm: 20 },
               abr: { autoSwitchBitrate: { video: false, audio: false } }
             }
           })
-          // 代理不需要 Cookie，禁用 credentials 避免 CORS 问题
           dashPlayer.setXHRWithCredentialsForType('MediaSegment', false)
           dashPlayer.setXHRWithCredentialsForType('MPD', false)
           dashPlayer.setXHRWithCredentialsForType('InitializationSegment', false)
           dashPlayer.setXHRWithCredentialsForType('BitstreamSwitchingSegment', false)
 
-          // 通过 CLI 后端生成 MPD（含正确的 moov/sidx range）
-          // 直接传入 /resolve 返回的原始 B站 CDN URL，避免 /api/dash-mpd 重复解析
           logTest('请求 CLI 生成 MPD manifest...')
           var mpdParams = new URLSearchParams({
             videoUrl: data.sourceVideoUrl || '',
@@ -656,59 +610,34 @@ const setupPageHTML = `<!DOCTYPE html>
             logTest('dash.js ERROR: ' + (e.error ? (e.error.code + ' ' + e.error.message) : JSON.stringify(e)))
             renderTestInfo()
           })
-          dashPlayer.on(dashjs.MediaPlayer.events['STREAM_INITIALIZED'], () => {
-            logTest('流初始化完成')
-            renderTestInfo()
-          })
+          dashPlayer.on(dashjs.MediaPlayer.events['STREAM_INITIALIZED'], () => { logTest('流初始化完成'); renderTestInfo() })
           dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_PLAYING'], () => {
             logTest('开始播放, currentTime=' + testVideo.currentTime.toFixed(2) + ', duration=' + testVideo.duration.toFixed(2))
-            // 首次播放 3 秒后自动测试 seek
-            if (!seekTested) {
-              seekTested = true
-              setTimeout(function() { testSeek(100) }, 3000)
-            }
+            if (!seekTested) { seekTested = true; setTimeout(function() { testSeek(100) }, 3000) }
             renderTestInfo()
           })
-          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_PAUSED'], () => {
-            logTest('暂停, currentTime=' + testVideo.currentTime.toFixed(2))
-            renderTestInfo()
-          })
-          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_ERROR'], (e) => {
-            logTest('播放错误: ' + JSON.stringify(e))
-            renderTestInfo()
-          })
-          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_SEEKING'], () => {
-            logTest('seeking 开始, currentTime=' + testVideo.currentTime.toFixed(2))
-            renderTestInfo()
-          })
-          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_SEEKED'], () => {
-            logTest('seeking 完成, currentTime=' + testVideo.currentTime.toFixed(2))
-            renderTestInfo()
-          })
+          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_PAUSED'], () => { logTest('暂停, currentTime=' + testVideo.currentTime.toFixed(2)); renderTestInfo() })
+          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_ERROR'], (e) => { logTest('播放错误: ' + JSON.stringify(e)); renderTestInfo() })
+          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_SEEKING'], () => { logTest('seeking 开始, currentTime=' + testVideo.currentTime.toFixed(2)); renderTestInfo() })
+          dashPlayer.on(dashjs.MediaPlayer.events['PLAYBACK_SEEKED'], () => { logTest('seeking 完成, currentTime=' + testVideo.currentTime.toFixed(2)); renderTestInfo() })
 
-          // seek 测试函数：seek 到指定时间，记录结果
           window.testSeek = function(targetTime) {
             logTest('--- seek 测试: 目标=' + targetTime + 's ---')
             logTest('seek 前 currentTime=' + testVideo.currentTime.toFixed(2) + ', seeking=' + testVideo.seeking)
             var seekStart = Date.now()
             testVideo.currentTime = targetTime
-
-            // 10 秒超时检测
             var seekTimeout = setTimeout(function() {
               if (testVideo.seeking) {
                 logTest('!!! seek 超时 (10s), currentTime=' + testVideo.currentTime.toFixed(2) + ', seeking=' + testVideo.seeking + ', readyState=' + testVideo.readyState)
                 renderTestInfo()
-                // 超时后测试 seek 到 50
                 setTimeout(function() { testSeek2(50) }, 2000)
               }
             }, 10000)
-
             var seekedHandler = function() {
               clearTimeout(seekTimeout)
               var elapsed = Date.now() - seekStart
               logTest('seek 完成, 耗时=' + elapsed + 'ms, currentTime=' + testVideo.currentTime.toFixed(2) + ', readyState=' + testVideo.readyState)
               renderTestInfo()
-              // 2 秒后测试第二次 seek
               setTimeout(function() { testSeek2(50) }, 2000)
             }
             testVideo.addEventListener('seeked', seekedHandler, { once: true })
@@ -718,14 +647,12 @@ const setupPageHTML = `<!DOCTYPE html>
             logTest('seek 前 currentTime=' + testVideo.currentTime.toFixed(2))
             var seekStart = Date.now()
             testVideo.currentTime = targetTime
-
             var seekTimeout = setTimeout(function() {
               if (testVideo.seeking) {
                 logTest('!!! seek2 超时 (10s), currentTime=' + testVideo.currentTime.toFixed(2) + ', seeking=' + testVideo.seeking)
                 renderTestInfo()
               }
             }, 10000)
-
             var seekedHandler = function() {
               clearTimeout(seekTimeout)
               var elapsed = Date.now() - seekStart

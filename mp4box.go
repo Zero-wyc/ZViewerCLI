@@ -84,55 +84,6 @@ func encodeURIComponent(s string) string {
 	return buf.String()
 }
 
-// sidxEntry 表示 sidx box 中的一个 segment 引用。
-type sidxEntry struct {
-	referencedSize   int
-	subsegmentDuration uint32
-}
-
-// parseSidx 解析 sidx box 中的 segment 引用列表。
-func parseSidx(buf []byte, boxStart, boxEnd int) ([]sidxEntry, error) {
-	if boxEnd-boxStart < 20 {
-		return nil, fmt.Errorf("sidx box too small")
-	}
-	data := buf[boxStart:boxEnd]
-	// version(1) + flags(3) + reference_ID(4) + timescale(4)
-	off := 8 // skip version+flags+reference_ID
-	timescale := binary.BigEndian.Uint32(data[off : off+4])
-	_ = timescale
-	off += 4
-	// if version == 0: earliest_presentation_time(4) + first_offset(4)
-	// else: earliest_presentation_time(8) + first_offset(8)
-	version := data[0]
-	if version == 0 {
-		off += 8
-	} else {
-		off += 16
-	}
-	// reserved(2) + reference_count(2)
-	if off+4 > len(data) {
-		return nil, fmt.Errorf("sidx header truncated")
-	}
-	refCount := binary.BigEndian.Uint16(data[off+2 : off+4])
-	off += 4
-
-	var entries []sidxEntry
-	for i := 0; i < int(refCount); i++ {
-		if off+12 > len(data) {
-			break
-		}
-		// reference_type(1bit) + referenced_size(31bits)
-		refSize := int(binary.BigEndian.Uint32(data[off:off+4]) & 0x7FFFFFFF)
-		subDuration := binary.BigEndian.Uint32(data[off+4 : off+8])
-		entries = append(entries, sidxEntry{
-			referencedSize:     refSize,
-			subsegmentDuration: subDuration,
-		})
-		off += 12 // 4(size) + 4(duration) + 4(sap)
-	}
-	return entries, nil
-}
-
 // generateMpd 生成 DASH MPD manifest，使用正确的 init range 和 sidx range。
 func generateMpd(proxyBase, videoUrl, audioUrl, videoCodec, audioCodec string, duration int) string {
 	dur := duration

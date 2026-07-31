@@ -57,21 +57,3 @@ func (s *State) SetLastError(err string) {
 	s.LastError = err
 	s.mu.Unlock()
 }
-
-func (s *State) Snapshot() map[string]any {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	m := map[string]any{
-		"connected":  s.Connected,
-		"connecting": s.Connecting,
-		"lastError":  s.LastError,
-		"config":     s.Config,
-		"userInfo":   s.UserInfo,
-	}
-	if s.CookieValid != nil {
-		m["cookieValid"] = *s.CookieValid
-	} else {
-		m["cookieValid"] = nil
-	}
-	return m
-}

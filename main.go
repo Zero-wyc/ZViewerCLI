@@ -36,7 +36,7 @@ func main() {
 	flag.StringVar(&roomID, "room", "", "房间 ID")
 	flag.StringVar(&cookie, "cookie", "", "B站 Cookie")
 	flag.BoolVar(&setupMode, "setup", true, "启动本地配置页面")
-	flag.BoolVar(&noOpen, "no-open", false, "不自动打开浏览器")
+	flag.BoolVar(&noOpen, "no-open", true, "不自动打开浏览器")
 	flag.BoolVar(&showHelp, "help", false, "显示帮助")
 	flag.Parse()
 
@@ -118,7 +118,8 @@ func printHelp() {
 	flag.PrintDefaults()
 	fmt.Println(`
 示例:
-  zviewer-cli                          # 启动本地配置页
+  zviewer-cli                          # 启动命令行（不自动打开浏览器）
+  zviewer-cli --no-open=false          # 启动时自动打开浏览器
   zviewer-cli --server http://localhost:3333 --room abc123 --cookie "..."`)
 }
 

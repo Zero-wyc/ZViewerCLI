@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -231,6 +232,16 @@ func (a *Agent) setupServer() *http.ServeMux {
 	})
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		// /health 被前端跨域轮询，显式返回 CORS 头。
+		// 外层 rs/cors 中间件通常已处理，此处再设置一次可防止旧版构建或
+		// 某些浏览器安全扩展导致响应头丢失。
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Range")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		jsonResponse(w, http.StatusOK, map[string]any{
 			"ok":      true,
 			"agent":   "zcontrol-cli",
@@ -238,10 +249,30 @@ func (a *Agent) setupServer() *http.ServeMux {
 		})
 	})
 
+	mux.HandleFunc("/Nacho.webp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		imgPath := "Nacho.webp"
+		if ex, err := os.Executable(); err == nil {
+			imgPath = filepath.Join(filepath.Dir(ex), "Nacho.webp")
+		}
+		data, err := os.ReadFile(imgPath)
+		if err != nil {
+			http.Error(w, "背景图片未找到", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/webp")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(data)
+	})
+
 	mux.HandleFunc("/api/config", a.handleConfig)
 	mux.HandleFunc("/api/qr", a.handleQR)
 	mux.HandleFunc("/api/qr/poll", a.handleQRPoll)
 	mux.HandleFunc("/api/connect", a.handleConnect)
+	mux.HandleFunc("/api/disconnect", a.handleDisconnect)
 	mux.HandleFunc("/api/bili-info", a.handleBiliInfo)
 	mux.HandleFunc("/api/dash-mpd", a.handleDashMpd)
 	mux.HandleFunc("/resolve", a.handleResolve)
@@ -409,6 +440,21 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, map[string]any{"success": true, "message": "连接成功"})
 }
 
+// handleDisconnect 取消房间连接，关闭 socket 并停止自动重连。
+func (a *Agent) handleDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	a.disconnect()
+	logf("已取消房间连接")
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"success":   true,
+		"message":   "已断开连接",
+		"connected": a.state.Connected,
+	})
+}
+
 // handleBiliInfo 通过 B站 API 获取视频信息（cid、标题、时长），避免浏览器直接请求 B站 API 的 CORS 问题。
 // 现在复用本地 resolver 的 WBI 签名接口，与 backend 行为一致。
 func (a *Agent) handleBiliInfo(w http.ResponseWriter, r *http.Request) {
@@ -517,7 +563,32 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logf("[resolve] 解析成功 bvid=%s format=%s qn=%d videoUrl=%s", bvid, result.Format, result.CurrentQn, result.VideoUrl)
+	// 解析结果日志：输出标题、格式、清晰度、时长、可用清晰度列表等关键信息，
+	// 便于在 CLI 终端直观确认解析是否符合预期（如 MP4 限 720P、DASH 高画质等）。
+	qnLabel := fmt.Sprintf("qn=%d", result.CurrentQn)
+	for _, q := range result.AcceptQuality {
+		if q.ID == result.CurrentQn {
+			qnLabel = fmt.Sprintf("qn=%d(%s)", q.ID, q.Label)
+			break
+		}
+	}
+	durationStr := "-"
+	if result.Duration > 0 {
+		m := result.Duration / 60
+		s := result.Duration % 60
+		durationStr = fmt.Sprintf("%02d:%02d", m, s)
+	}
+	acceptLabels := make([]string, 0, len(result.AcceptQuality))
+	for _, q := range result.AcceptQuality {
+		acceptLabels = append(acceptLabels, fmt.Sprintf("%d(%s)", q.ID, q.Label))
+	}
+	logf("[resolve] 解析成功: title=%q duration=%s format=%s %s",
+		result.Title, durationStr, result.Format, qnLabel)
+	logf("[resolve] 可用清晰度: %s", strings.Join(acceptLabels, ", "))
+	logf("[resolve] 视频流: %s", result.VideoUrl)
+	if result.AudioUrl != "" {
+		logf("[resolve] 音频流: %s", result.AudioUrl)
+	}
 
 	// 缓存主 URL 与候选 URL 映射（视频/音频分开，避免 /proxy 交叉尝试）。
 	a.setBackupUrls(result.VideoUrl, result.VideoBackupUrls)

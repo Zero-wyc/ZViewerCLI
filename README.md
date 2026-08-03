@@ -350,6 +350,31 @@ upx --lzma zviewer-cli-linux-arm64
 
 > 脚本会自动查找 UPX：优先使用参数 `-UPXPath` 指定的路径，其次查找 PATH 环境变量，最后检查常见默认路径。也可通过 `.\build.ps1 -UPXPath "D:\tools\upx.exe"` 手动指定。
 
+### CI/CD 自动构建
+
+项目配置了 GitHub Actions 工作流（`.github/workflows/build.yml`），支持两种触发方式：
+
+- **Tag 推送**：推送 `v*` 格式的 tag 时自动构建并创建 Release
+- **手动触发**：在 GitHub Actions 页面手动运行，可选择创建 Draft Release
+
+```bash
+# 推送 tag 触发自动构建
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+构建策略与本地脚本一致：
+
+| 平台 | 压缩方式 | Runner |
+|------|---------|--------|
+| Windows amd64 | UPX `--best --lzma`（极限压缩） | `windows-latest` |
+| Linux amd64 | UPX `--best --lzma`（极限压缩） | `ubuntu-latest` |
+| Linux arm64 | UPX `--best --lzma`（极限压缩） | `ubuntu-latest`（交叉编译） |
+| macOS amd64 | 不压缩 | `macos-13` |
+| macOS arm64 | 不压缩 | `macos-14` |
+
+> Windows 和 Linux 在 CI 中统一使用 `--best --lzma` 极限压缩；macOS 由于 UPX 不支持，跳过压缩步骤。
+
 ---
 
 ## 项目结构
@@ -368,6 +393,7 @@ ZViewerCLI/
 ├── state.go          # 运行时状态管理
 ├── speedlog.go       # 代理流量日志
 ├── build.ps1         # 一键交叉编译脚本（含 UPX 压缩）
+├── .github/workflows/ # GitHub Actions CI/CD 自动构建
 ├── go.mod            # Go 模块依赖
 ├── dist/             # 预编译的多平台二进制文件
 └── m4s_head.bin      # m4s 初始化段模板

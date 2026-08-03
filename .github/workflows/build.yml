@@ -1,0 +1,151 @@
+name: Build CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: '创建 Draft Release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  BINARY_NAME: zviewer-cli
+  UPX_VERSION: '5.0.0'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            runner: windows-latest
+            upx: true
+            ext: .exe
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            upx: true
+            ext: ''
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+            runner: ubuntu-latest
+            upx: true
+            ext: ''
+          - target: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            runner: macos-13
+            upx: false
+            ext: ''
+          - target: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            runner: macos-14
+            upx: false
+            ext: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: go build -ldflags="-s -w" -trimpath -o ${{ env.BINARY_NAME }}-${{ matrix.target }}${{ matrix.ext }} .
+
+      # ── UPX 安装（仅 Windows 和 Linux）──
+
+      - name: Install UPX (Linux)
+        if: matrix.upx && runner.os == 'Linux'
+        run: |
+          wget -q https://github.com/upx/upx/releases/download/v${{ env.UPX_VERSION }}/upx-${{ env.UPX_VERSION }}-amd64_linux.tar.xz
+          tar xf upx-${{ env.UPX_VERSION }}-amd64_linux.tar.xz
+          sudo install upx-${{ env.UPX_VERSION }}-amd64_linux/upx /usr/local/bin/upx
+          upx --version | head -1
+
+      - name: Install UPX (Windows)
+        if: matrix.upx && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $url = "https://github.com/upx/upx/releases/download/v${{ env.UPX_VERSION }}/upx-${{ env.UPX_VERSION }}-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile upx.zip
+          Expand-Archive -Path upx.zip -DestinationPath upx-extract -Force
+          $upxPath = (Get-ChildItem -Path upx-extract -Recurse -Filter "upx.exe").FullName
+          New-Item -ItemType Directory -Path "$env:GITHUB_WORKSPACE\bin" -Force | Out-Null
+          Copy-Item $upxPath -Destination "$env:GITHUB_WORKSPACE\bin\upx.exe"
+          echo "$env:GITHUB_WORKSPACE\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          & "$env:GITHUB_WORKSPACE\bin\upx.exe" --version | Select-Object -First 1
+
+      # ── UPX 极限压缩 ──
+
+      - name: Compress with UPX (extreme)
+        if: matrix.upx
+        run: upx --best --lzma ${{ env.BINARY_NAME }}-${{ matrix.target }}${{ matrix.ext }}
+
+      - name: Show binary size
+        shell: bash
+        run: ls -lh ${{ env.BINARY_NAME }}-${{ matrix.target }}${{ matrix.ext }}
+
+      # ── 上传构件 ──
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+          path: ${{ env.BINARY_NAME }}-${{ matrix.target }}${{ matrix.ext }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files
+        run: ls -lh dist/
+
+      - name: Create Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Create Draft Release (manual)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          tag_name: nightly-${{ github.run_number }}
+          name: Nightly Build #${{ github.run_number }}
+          body: |
+            Manual build from workflow_dispatch.
+            Commit: ${{ github.sha }}

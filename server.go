@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/rs/cors"
 )
+
+//go:embed Nacho.webp
+var nachoBackground []byte
 
 // proxyUpstreamTimeoutMs 上游代理默认超时。
 const proxyUpstreamTimeoutMs = 60_000
@@ -254,14 +258,15 @@ func (a *Agent) setupServer() *http.ServeMux {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		imgPath := "Nacho.webp"
+		// 优先使用内嵌的背景图数据（编译时通过 //go:embed 打包），
+		// 这样 exe 单独运行时无需外部文件即可显示背景。
+		data := nachoBackground
+		// 若 exe 同目录存在同名文件，则使用外部文件覆盖（便于用户自定义背景）。
 		if ex, err := os.Executable(); err == nil {
-			imgPath = filepath.Join(filepath.Dir(ex), "Nacho.webp")
-		}
-		data, err := os.ReadFile(imgPath)
-		if err != nil {
-			http.Error(w, "背景图片未找到", http.StatusNotFound)
-			return
+			extPath := filepath.Join(filepath.Dir(ex), "Nacho.webp")
+			if extData, err := os.ReadFile(extPath); err == nil {
+				data = extData
+			}
 		}
 		w.Header().Set("Content-Type", "image/webp")
 		w.Header().Set("Cache-Control", "public, max-age=86400")

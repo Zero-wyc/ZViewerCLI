@@ -121,7 +121,6 @@ $startTime = Get-Date
 Build-Binary -TargetOS "windows" -Arch "amd64" -Name "zviewer-cli-windows-amd64" -CompressMode "extreme"
 Build-Binary -TargetOS "linux" -Arch "amd64" -Name "zviewer-cli-linux-amd64" -CompressMode "normal"
 Build-Binary -TargetOS "linux" -Arch "arm64" -Name "zviewer-cli-linux-arm64" -CompressMode "normal"
-Build-Binary -TargetOS "darwin" -Arch "amd64" -Name "zviewer-cli-darwin-amd64" -CompressMode "normal"
 Build-Binary -TargetOS "darwin" -Arch "arm64" -Name "zviewer-cli-darwin-arm64" -CompressMode "normal"
 
 $elapsed = (Get-Date) - $startTime

@@ -44,12 +44,6 @@ jobs:
             runner: ubuntu-latest
             upx: true
             ext: ''
-          - target: darwin-amd64
-            goos: darwin
-            goarch: amd64
-            runner: macos-13
-            upx: false
-            ext: ''
           - target: darwin-arm64
             goos: darwin
             goarch: arm64

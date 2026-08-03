@@ -80,7 +80,6 @@ ZViewerCLI 通过本地代理的方式解决这些问题：Cookie 只留在用�
 ```text
 dist/
 ├── zviewer-cli-windows-amd64.exe
-├── zviewer-cli-darwin-amd64
 ├── zviewer-cli-darwin-arm64
 ├── zviewer-cli-linux-amd64
 └── zviewer-cli-linux-arm64
@@ -309,9 +308,6 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zvi
 # Linux arm64
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-linux-arm64 .
 
-# macOS Intel
-GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-darwin-amd64 .
-
 # macOS Apple Silicon
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-darwin-arm64 .
 ```
@@ -343,7 +339,6 @@ upx --lzma zviewer-cli-linux-arm64
 | Windows amd64 | UPX `--best --lzma`（极限压缩） | ~2.4 MB |
 | Linux amd64 | UPX `--lzma`（正常压缩） | ~2.3 MB |
 | Linux arm64 | UPX `--lzma`（正常压缩） | ~2.0 MB |
-| macOS amd64 | 跳过 UPX | ~7.5 MB |
 | macOS arm64 | 跳过 UPX | ~7.0 MB |
 
 编译产物输出到 `%TEMP%\zviewer-cli-dist\` 目录。
@@ -370,7 +365,6 @@ git push origin v0.1.0
 | Windows amd64 | UPX `--best --lzma`（极限压缩） | `windows-latest` |
 | Linux amd64 | UPX `--best --lzma`（极限压缩） | `ubuntu-latest` |
 | Linux arm64 | UPX `--best --lzma`（极限压缩） | `ubuntu-latest`（交叉编译） |
-| macOS amd64 | 不压缩 | `macos-13` |
 | macOS arm64 | 不压缩 | `macos-14` |
 
 > Windows 和 Linux 在 CI 中统一使用 `--best --lzma` 极限压缩；macOS 由于 UPX 不支持，跳过压缩步骤。

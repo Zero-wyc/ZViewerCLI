@@ -1,4 +1,4 @@
-# ZViewer CLI 一键编译脚本
+﻿# ZViewer CLI 一键编译脚本
 # 自动交叉编译所有平台：
 #   Windows → UPX --best --lzma（极限压缩）
 #   Linux   → UPX --lzma（正常压缩）
@@ -9,6 +9,9 @@
 param(
     [string]$UPXPath = ""  # 留空则自动查找 PATH 或默认路径
 )
+
+# 切换到脚本所在目录，确保 go build . 在正确位置运行
+Set-Location $PSScriptRoot
 
 $C_GO = "C:\Program Files\Go\bin\go.exe"
 $C_DIST = Join-Path $env:TEMP "zviewer-cli-dist"

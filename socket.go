@@ -212,12 +212,16 @@ func (c *SocketClient) readLoop() {
 		}
 	}()
 	for {
-		_, msg, err := c.conn.ReadMessage()
+		messageType, msg, err := c.conn.ReadMessage()
 		if err != nil {
 			logf("Socket 断开: %v", err)
 			return
 		}
 		if len(msg) == 0 {
+			continue
+		}
+		// 忽略二进制消息，只处理文本（engine.io 协议为文本）
+		if messageType != websocket.TextMessage {
 			continue
 		}
 		c.lastActivityAt = time.Now()
@@ -233,6 +237,12 @@ func (c *SocketClient) handleMessage(msg string) {
 	rest := msg[1:]
 
 	switch engineType {
+	case '0': // open (handshake 后偶尔重发)
+		// ignore
+	case '1': // close
+		logf("[engine] 服务器要求关闭连接")
+		c.conn.Close()
+		return
 	case '2': // ping from server: 必须在 pingTimeout 内回复 pong
 		if err := c.writeText("3"); err != nil {
 			logf("[ping] pong 回复失败: %v", err)
@@ -241,8 +251,10 @@ func (c *SocketClient) handleMessage(msg string) {
 		// ignore
 	case '4': // message
 		c.handleSocketPacket(rest)
+	case '5': // upgrade (already websocket, ignore)
+	case '6': // noop (keepalive probe)
 	default:
-		logf("[engine] 未识别包类型: %c", engineType)
+		logf("[engine] 未识别包类型: 0x%02x", engineType)
 	}
 }
 

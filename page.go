@@ -180,10 +180,6 @@ const setupPageHTML = `<!DOCTYPE html>
           <label>后端地址</label>
           <input type="text" id="server" class="input" placeholder="http://localhost:3333" />
         </div>
-        <div class="field">
-          <label>房间 ID</label>
-          <input type="text" id="room" class="input" placeholder="例如 abc123" />
-        </div>
       </div>
 
       <div class="field">
@@ -202,18 +198,18 @@ const setupPageHTML = `<!DOCTYPE html>
         <div class="status" id="qrStatus">请使用哔哩哔哩 App 扫码</div>
       </div>
 
-      <div class="hint">扫码登录仅在本地处理 Cookie，不会上传到 ZViewer 服务器。</div>
+      <div class="hint">扫码登录仅在本地处理 Cookie，不会上传到 ZViewer 服务器。连接成功后 CLI 在服务器全局注册，任意房间开启「CLI 高画质代理」即可自动使用，无需填写房间号。</div>
     </div>
 
     <div class="card">
       <div class="section-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-        房间连接
+        服务器连接
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" id="connectBtn" type="button">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
-          连接房间
+          连接服务器
         </button>
         <button class="btn btn-danger hidden" id="disconnectBtn" type="button">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
@@ -221,7 +217,7 @@ const setupPageHTML = `<!DOCTYPE html>
         </button>
       </div>
       <div class="status hidden" id="connectStatus"></div>
-      <div class="hint">连接成功后，可在网页端「B站解析设置」中启用「CLI 高画质代理」。</div>
+      <div class="hint">连接成功后 CLI 对服务器上所有房间可用；在任意房间开启「CLI 高画质代理」即可自动使用，无需重复连接。</div>
     </div>
 
     <div class="card">
@@ -276,7 +272,6 @@ const setupPageHTML = `<!DOCTYPE html>
   <script>
     const params = new URLSearchParams(location.search)
     const serverEl = document.getElementById('server')
-    const roomEl = document.getElementById('room')
     const cookieEl = document.getElementById('cookie')
     const cookieStateEl = document.getElementById('cookieState')
     const qrBtn = document.getElementById('qrBtn')
@@ -286,6 +281,9 @@ const setupPageHTML = `<!DOCTYPE html>
     const connectBtn = document.getElementById('connectBtn')
     const connectStatus = document.getElementById('connectStatus')
     const disconnectBtn = document.getElementById('disconnectBtn')
+    // 注册归属用户名：网页端打开配置页时经 ?user= 传入，CLI 注册时上报，
+    // 前端据此只认自己的代理；CLI 进程内沿用 /api/config 返回的值
+    let userParam = params.get('user') || ''
     let roomState = { connected: false, connecting: false }
 
     function updateDisconnectVisibility() {
@@ -297,7 +295,6 @@ const setupPageHTML = `<!DOCTYPE html>
     }
 
     if (params.get('server')) serverEl.value = params.get('server')
-    if (params.get('room')) roomEl.value = params.get('room')
 
     function setStatus(el, text, type) {
       el.textContent = text
@@ -384,11 +381,9 @@ const setupPageHTML = `<!DOCTYPE html>
 
     connectBtn.addEventListener('click', async () => {
       const server = serverEl.value.trim()
-      const room = roomEl.value.trim()
       const cookie = cookieEl.value.trim()
 
       if (!server) { setStatus(connectStatus, '请填写后端地址', 'error'); return }
-      if (!room) { setStatus(connectStatus, '请填写房间 ID', 'error'); return }
       if (!cookie) { setStatus(connectStatus, '请先设置 B站 Cookie', 'error'); return }
 
       connectBtn.disabled = true
@@ -400,12 +395,12 @@ const setupPageHTML = `<!DOCTYPE html>
         const res = await fetch('/api/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serverUrl: server, roomId: room, cookie })
+          body: JSON.stringify({ serverUrl: server, user: userParam, cookie })
         })
         const data = await res.json()
         if (!res.ok || !data.success) throw new Error(data.message || '连接失败')
         roomState.connected = true
-        setStatus(connectStatus, '已连接房间，可在网页启用 CLI 高画质代理', 'success')
+        setStatus(connectStatus, '已连接服务器，在任意房间开启「CLI 高画质代理」即可自动使用', 'success')
       } catch (err) {
         setStatus(connectStatus, err.message, 'error')
       } finally {
@@ -424,7 +419,7 @@ const setupPageHTML = `<!DOCTYPE html>
         if (!res.ok || !data.success) throw new Error(data.message || '断开失败')
         roomState.connected = false
         roomState.connecting = false
-        setStatus(connectStatus, '已断开房间连接', 'success')
+        setStatus(connectStatus, '已断开服务器连接', 'success')
       } catch (err) {
         setStatus(connectStatus, err.message, 'error')
       } finally {
@@ -438,7 +433,7 @@ const setupPageHTML = `<!DOCTYPE html>
       .then(data => {
         if (!data.config) return
         if (data.config.serverUrl && !serverEl.value) serverEl.value = data.config.serverUrl
-        if (data.config.roomId && !roomEl.value) roomEl.value = data.config.roomId
+        if (data.config.user && !userParam) userParam = data.config.user
         if (data.config.cookie) {
           cookieEl.value = data.config.cookie
           updateCookieState(data.cookieValid, data.userInfo && data.userInfo.name)
@@ -449,7 +444,7 @@ const setupPageHTML = `<!DOCTYPE html>
           connectBtn.disabled = true
           setStatus(connectStatus, '正在连接…')
         } else if (roomState.connected) {
-          setStatus(connectStatus, '已连接房间', 'success')
+          setStatus(connectStatus, '已连接服务器', 'success')
         }
         updateDisconnectVisibility()
       })

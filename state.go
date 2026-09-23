@@ -3,9 +3,11 @@ package main
 import "sync"
 
 // LocalConfig 保存连接配置。
+// 2026-09 去房间化：CLI 只配置服务器地址即可全局注册（对所有房间可用），
+// User 为注册归属的用户名（网页端配置页经 ?user= 传入，供前端按用户过滤）。
 type LocalConfig struct {
 	ServerURL string `json:"serverUrl"`
-	RoomID    string `json:"roomId"`
+	User      string `json:"user,omitempty"`
 	Cookie    string `json:"cookie"`
 }
 

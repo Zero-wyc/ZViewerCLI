@@ -121,7 +121,7 @@ func (a *Agent) setConfig(cfg *LocalConfig) {
 
 func (a *Agent) doConnect() error {
 	cfg := a.state.Config
-	if cfg == nil || cfg.ServerURL == "" || cfg.RoomID == "" || cfg.Cookie == "" {
+	if cfg == nil || cfg.ServerURL == "" || cfg.Cookie == "" {
 		return fmt.Errorf("配置不完整")
 	}
 	if a.state.Connecting {
@@ -153,7 +153,7 @@ func (a *Agent) doConnect() error {
 		_ = saveUserConfig(cfg.Cookie, validation)
 	}
 
-	client, err := connectSocket(cfg.ServerURL, cfg.RoomID, a.proxyURL(), a.state)
+	client, err := connectSocket(cfg.ServerURL, cfg.User, a.proxyURL(), a.state)
 	if err != nil {
 		a.state.SetConnecting(false)
 		a.state.SetLastError(err.Error())
@@ -175,7 +175,7 @@ func (a *Agent) doConnect() error {
 // reconnectLoop 在连接断开后使用指数退避 + 抖动策略尝试重新连接。
 func (a *Agent) reconnectLoop() {
 	cfg := a.state.Config
-	if cfg == nil || cfg.ServerURL == "" || cfg.RoomID == "" {
+	if cfg == nil || cfg.ServerURL == "" {
 		return
 	}
 
@@ -188,7 +188,7 @@ func (a *Agent) reconnectLoop() {
 			return
 		}
 
-		logf("正在尝试重新连接房间 %s...", cfg.RoomID)
+		logf("正在尝试重新连接服务器 %s...", cfg.ServerURL)
 		if err := a.doConnect(); err != nil {
 			logf("重新连接失败: %v", err)
 			// 指数退避：delay = min(maxDelay, delay*2)，并加入 ±25% 抖动避免重连风暴
@@ -300,20 +300,20 @@ func (a *Agent) handleConfig(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var body struct {
 			ServerURL string `json:"serverUrl"`
-			RoomID    string `json:"roomId"`
+			User      string `json:"user"`
 			Cookie    string `json:"cookie"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求体解析失败"})
 			return
 		}
-		if strings.TrimSpace(body.ServerURL) == "" || strings.TrimSpace(body.RoomID) == "" {
-			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少 serverUrl 或 roomId"})
+		if strings.TrimSpace(body.ServerURL) == "" {
+			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少 serverUrl"})
 			return
 		}
 		cfg := &LocalConfig{
 			ServerURL: strings.TrimSpace(body.ServerURL),
-			RoomID:    strings.TrimSpace(body.RoomID),
+			User:      strings.TrimSpace(body.User),
 			Cookie:    strings.TrimSpace(body.Cookie),
 		}
 		if cfg.Cookie == "" && a.state.Config != nil {
@@ -407,7 +407,7 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		ServerURL string `json:"serverUrl"`
-		RoomID    string `json:"roomId"`
+		User      string `json:"user"`
 		Cookie    string `json:"cookie"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -418,23 +418,19 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少后端地址"})
 		return
 	}
-	if strings.TrimSpace(body.RoomID) == "" {
-		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少房间 ID"})
-		return
-	}
 	if strings.TrimSpace(body.Cookie) == "" {
 		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少 B站 Cookie"})
 		return
 	}
 	a.setConfig(&LocalConfig{
 		ServerURL: strings.TrimSpace(body.ServerURL),
-		RoomID:    strings.TrimSpace(body.RoomID),
+		User:      strings.TrimSpace(body.User),
 		Cookie:    strings.TrimSpace(body.Cookie),
 	})
 
 	if err := a.doConnect(); err != nil {
 		a.state.SetLastError(err.Error())
-		logf("连接房间失败: %v", err)
+		logf("连接服务器失败: %v", err)
 		status := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "Cookie") {
 			status = http.StatusUnauthorized
@@ -452,7 +448,7 @@ func (a *Agent) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.disconnect()
-	logf("已取消房间连接")
+	logf("已断开服务器连接")
 	jsonResponse(w, http.StatusOK, map[string]any{
 		"success":   true,
 		"message":   "已断开连接",

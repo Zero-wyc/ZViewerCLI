@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	version   = "0.1.0"
+	version   = "0.2.0"
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
@@ -24,7 +24,7 @@ func main() {
 	var (
 		port      int
 		serverURL string
-		roomID    string
+		user      string
 		cookie    string
 		setupMode bool
 		noOpen    bool
@@ -33,7 +33,7 @@ func main() {
 
 	flag.IntVar(&port, "port", 9333, "本地 HTTP 服务端口")
 	flag.StringVar(&serverURL, "server", "", "ZViewer 后端地址")
-	flag.StringVar(&roomID, "room", "", "房间 ID")
+	flag.StringVar(&user, "user", "", "注册归属用户名（网页端经 ?user= 传入）")
 	flag.StringVar(&cookie, "cookie", "", "B站 Cookie")
 	flag.BoolVar(&setupMode, "setup", true, "启动本地配置页面")
 	flag.BoolVar(&noOpen, "no-open", true, "不自动打开浏览器")
@@ -60,8 +60,8 @@ func main() {
 	if serverURL != "" {
 		cfg.ServerURL = strings.TrimSpace(serverURL)
 	}
-	if roomID != "" {
-		cfg.RoomID = strings.TrimSpace(roomID)
+	if user != "" {
+		cfg.User = strings.TrimSpace(user)
 	}
 	if cookie != "" {
 		cfg.Cookie = strings.TrimSpace(cookie)
@@ -84,19 +84,19 @@ func main() {
 		if cfg.ServerURL != "" {
 			u += "?server=" + urlEncode(cfg.ServerURL)
 		}
-		if cfg.RoomID != "" {
+		if cfg.User != "" {
 			sep := "?"
 			if strings.Contains(u, "?") {
 				sep = "&"
 			}
-			u += sep + "room=" + urlEncode(cfg.RoomID)
+			u += sep + "user=" + urlEncode(cfg.User)
 		}
 		if !noOpen {
 			go openBrowser(u)
 		}
 	}
 
-	if cfg.ServerURL != "" && cfg.RoomID != "" && cfg.Cookie != "" {
+	if cfg.ServerURL != "" && cfg.Cookie != "" {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			if err := agent.doConnect(); err != nil {
@@ -111,6 +111,10 @@ func main() {
 func printHelp() {
 	fmt.Println(`ZViewer CLI - 本地高画质代理客户端
 
+CLI 全局注册到服务器（不绑定房间）：只需填写后端地址 + B站 Cookie，
+一个 CLI 实例对服务器上所有房间可用；网页端任意房间开启
+「CLI 高画质代理」即自动使用。
+
 用法:
   zviewer-cli [选项]
 
@@ -120,7 +124,7 @@ func printHelp() {
 示例:
   zviewer-cli                          # 启动命令行（不自动打开浏览器）
   zviewer-cli --no-open=false          # 启动时自动打开浏览器
-  zviewer-cli --server http://localhost:3333 --room abc123 --cookie "..."`)
+  zviewer-cli --server http://localhost:3333 --cookie "..."`)
 }
 
 func urlEncode(s string) string {

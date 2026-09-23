@@ -15,7 +15,7 @@ Set-Location $PSScriptRoot
 
 $C_GO = "C:\Program Files\Go\bin\go.exe"
 $C_DIST = Join-Path $env:TEMP "zviewer-cli-dist"
-$C_VER = "0.1.0"
+$C_VER = "0.2.0"
 
 $L_INFO = "[INFO]"
 $L_OK = "[OK]"

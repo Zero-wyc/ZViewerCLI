@@ -38,9 +38,9 @@ ZViewerCLI 通过本地代理的方式解决这些问题：Cookie 只留在用�
 - **本地 Cookie 解析**：使用用户自己的 Bilibili Cookie 解析视频，支持大会员高画质。
 - **视频流代理**：代理 Bilibili CDN 视频/音频流，注入正确的请求头，绕过 CORS 与防盗链。
 - **CDN 自动切换**：单个 CDN 连接失败时，自动尝试备用 CDN 地址。
-- **WebSocket 房间注册**：自动向 ZViewer 房间注册，前端可自动发现并启用本地代理。
+- **WebSocket 全局注册**：自动向 ZViewer 服务器注册（不绑定房间），前端可自动发现并启用本地代理，一个 CLI 实例对所有房间可用。
 - **二维码登录**：内置 Bilibili 二维码登录页面，无需手动复制 Cookie。
-- **本地配置页面**：启动后自动打开浏览器配置页，填写后端地址、房间 ID、Cookie 即可连接。
+- **本地配置页面**：启动后自动打开浏览器配置页，填写后端地址、Cookie 即可连接。
 - **断线自动重连**：与 ZViewer 后端断开连接后，使用指数退避策略自动重连。
 
 ---
@@ -63,9 +63,9 @@ ZViewerCLI 通过本地代理的方式解决这些问题：Cookie 只留在用�
 
 核心流程：
 
-1. 用户在本地启动 ZViewerCLI，配置 ZViewer 后端地址、房间 ID 和 Bilibili Cookie。
-2. ZViewerCLI 通过 WebSocket 连接到 ZViewer 后端，向房间注册自己的代理地址。
-3. 当前端检测到房间内有 CLI 代理可用时，优先将 Bilibili 视频解析请求发送给本地 CLI。
+1. 用户在本地启动 ZViewerCLI，配置 ZViewer 后端地址和 Bilibili Cookie（无需房间号）。
+2. ZViewerCLI 通过 WebSocket 连接到 ZViewer 后端，将代理地址全局注册到服务器。
+3. 任意房间开启「CLI 高画质代理」后，前端自动发现已注册的本地 CLI，将 Bilibili 视频解析请求发送给本地 CLI。
 4. CLI 使用本地 Cookie 解析视频，返回代理后的视频/音频 URL。
 5. 浏览器请求本地代理地址，CLI 再向上游 Bilibili CDN 请求真实数据并转发给浏览器。
 
@@ -112,14 +112,13 @@ chmod +x zviewer-cli-darwin-arm64
 在配置页面填写：
 
 - **ZViewer 后端地址**：例如 `http://localhost:3333` 或 `https://your-domain.com`
-- **房间 ID**：要加入的房间号
 - **Bilibili Cookie**：可通过二维码登录自动获取，或手动粘贴
 
-点击连接后，CLI 会验证 Cookie 并注册到房间。
+点击连接后，CLI 会验证 Cookie 并全局注册到服务器（不绑定房间，所有房间可用）。
 
 ### 4. 在房间中启用
 
-进入 ZViewer 房间，在「Bilibili 解析设置」中开启「CLI 本地高画质代理」。此时播放器将通过本地 CLI 加载视频。
+进入 ZViewer 任意房间，在「Bilibili 解析设置」中开启「CLI 本地高画质代理」。前端会自动连接已注册的本地 CLI，播放器将通过本地 CLI 加载视频。
 
 ---
 
@@ -134,8 +133,8 @@ chmod +x zviewer-cli-darwin-arm64
         本地 HTTP 服务端口 (默认 9333)
   -server string
         ZViewer 后端地址
-  -room string
-        房间 ID
+  -user string
+        注册归属用户名（网页端经 ?user= 传入）
   -cookie string
         Bilibili Cookie
   -setup
@@ -152,8 +151,8 @@ chmod +x zviewer-cli-darwin-arm64
 # 仅启动本地配置页
 ./zviewer-cli
 
-# 启动并自动连接指定房间
-./zviewer-cli -server http://localhost:3333 -room abc123 -cookie "SESSDATA=xxx"
+# 启动并自动连接服务器（全局注册，所有房间可用）
+./zviewer-cli -server http://localhost:3333 -cookie "SESSDATA=xxx"
 
 # 指定端口，不自动打开浏览器
 ./zviewer-cli -port 8080 -no-open
@@ -185,7 +184,7 @@ Content-Type: application/json
 
 {
   "serverUrl": "http://localhost:3333",
-  "roomId": "abc123",
+  "user": "username",
   "cookie": "SESSDATA=xxx"
 }
 ```
@@ -414,7 +413,7 @@ ZViewerCLI 是 [ZViewer](../ZViewer) 的可选配套组件，不依赖 CLI 也�
 
 - 视频解析由用户本地 Cookie 完成，可获得个人大会员等高画质。
 - 视频流通过本地代理，避免浏览器 CORS 与防盗链问题。
-- 同一房间内多人共享房主/观众的 CLI 代理，提升播放稳定性。
+- CLI 在服务器上全局注册：只要本机 CLI 在线，任意房间开启开关即可使用，无需逐房间连接。
 
 ZViewer 主项目负责房间状态同步、用户管理、播放控制；ZViewerCLI 负责本地化的 Bilibili 解析与流代理。两者通过 WebSocket 与本地 HTTP API 协作。
 
@@ -435,7 +434,7 @@ ZViewer 主项目负责房间状态同步、用户管理、播放控制；ZViewe
 ### 已连接但前端未使用 CLI 代理
 
 - 确认房间内「CLI 本地高画质代理」开关已开启。
-- 确认前端与 CLI 连接的是同一个房间。
+- 确认前端登录的用户名与 CLI 注册归属一致（网页端打开配置页时会自动经 `?user=` 传入；CLI 版本过旧未上报归属时，代理对所有用户可见）。
 - 检查浏览器控制台是否有 CORS 或网络错误。
 
 ### 视频流加载卡顿

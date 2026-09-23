@@ -17,7 +17,7 @@ type SocketClient struct {
 	conn           *websocket.Conn
 	writeMu        sync.Mutex
 	serverURL      string
-	roomID         string
+	user           string
 	proxyURL       string
 	state          *State
 	onDisconnect   func()
@@ -69,7 +69,7 @@ func toWebSocketURL(serverURL string) (string, error) {
 	return u.String(), nil
 }
 
-func connectSocket(serverURL, roomID, proxyURL string, state *State) (*SocketClient, error) {
+func connectSocket(serverURL, user, proxyURL string, state *State) (*SocketClient, error) {
 	wsURL, err := toWebSocketURL(serverURL)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func connectSocket(serverURL, roomID, proxyURL string, state *State) (*SocketCli
 	c := &SocketClient{
 		conn:           conn,
 		serverURL:      serverURL,
-		roomID:         roomID,
+		user:           user,
 		proxyURL:       proxyURL,
 		state:          state,
 		stopKeepAlive:  make(chan struct{}),
@@ -151,12 +151,17 @@ func (c *SocketClient) emit(event string, payload any) error {
 }
 
 func (c *SocketClient) register() error {
-	return c.emit("cli-register", map[string]any{
-		"roomId":   c.roomID,
+	// 全局注册：不再上报 roomId，CLI 对服务器上所有房间可用；
+	// user 为注册归属（网页端配置页经 ?user= 传入），前端据此过滤自己的代理
+	payload := map[string]any{
 		"proxyUrl": c.proxyURL,
 		"agent":    "zcontrol-cli",
 		"version":  version,
-	})
+	}
+	if c.user != "" {
+		payload["user"] = c.user
+	}
+	return c.emit("cli-register", payload)
 }
 
 func (c *SocketClient) Close() {
@@ -302,7 +307,7 @@ func (c *SocketClient) handleEvent(event string, data json.RawMessage) {
 	switch event {
 	// ── CLI 自身 ──────────────────────────────────────────
 	case "cli-registered":
-		logf("[CLI] 已注册到房间: %s", c.roomID)
+		logf("[CLI] 已注册到服务器（全局，所有房间可用）")
 		return
 	case "cli-error":
 		logf("[CLI] 错误: %v", m["message"])
@@ -315,7 +320,7 @@ func (c *SocketClient) handleEvent(event string, data json.RawMessage) {
 		return
 	case "cli-agents":
 		agents, _ := m["agents"].([]any)
-		logf("[CLI] 房间内代理列表: %d 个", len(agents))
+		logf("[CLI] 服务器代理列表: %d 个", len(agents))
 		return
 
 	// ── 播放状态与控制 ────────────────────────────────────

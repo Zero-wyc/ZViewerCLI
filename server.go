@@ -512,11 +512,17 @@ func (a *Agent) resolveCookie(r *http.Request) string {
 func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	bvid := q.Get("bvid")
+	epIdRaw := q.Get("epId")
 	cidRaw := q.Get("cid")
 	qnRaw := q.Get("qn")
 	preferMp4 := q.Get("preferMp4") == "true"
 	forceDash := q.Get("forceDash") == "true"
-	if bvid == "" || cidRaw == "" {
+	// bvid（UGC）或 epId（PGC 番剧）二选一；UGC 路径仍需 cid
+	if bvid == "" && epIdRaw == "" {
+		http.Error(w, `{"error":"缺少 bvid 或 epId"}`, http.StatusBadRequest)
+		return
+	}
+	if bvid != "" && cidRaw == "" {
 		http.Error(w, `{"error":"缺少 bvid 或 cid"}`, http.StatusBadRequest)
 		return
 	}
@@ -526,20 +532,37 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cid, err := strconv.ParseInt(cidRaw, 10, 64)
-	if err != nil {
-		http.Error(w, `{"error":"cid 格式错误"}`, http.StatusBadRequest)
-		return
+	var cid int64
+	if cidRaw != "" {
+		var err error
+		cid, err = strconv.ParseInt(cidRaw, 10, 64)
+		if err != nil {
+			http.Error(w, `{"error":"cid 格式错误"}`, http.StatusBadRequest)
+			return
+		}
 	}
 	qn := 0
 	if qnRaw != "" {
 		qn, _ = strconv.Atoi(qnRaw)
 	}
 
-	logf("[resolve] 收到解析请求 bvid=%s cid=%d qn=%d preferMp4=%v forceDash=%v", bvid, cid, qn, preferMp4, forceDash)
+	// 番剧（epId）走 PGC 编排：Url 构造为 ep 链接，cid 可选（定位目标集）
+	targetUrl := ""
+	if epIdRaw != "" {
+		epId, err := strconv.ParseInt(epIdRaw, 10, 64)
+		if err != nil {
+			http.Error(w, `{"error":"epId 格式错误"}`, http.StatusBadRequest)
+			return
+		}
+		targetUrl = fmt.Sprintf("https://www.bilibili.com/bangumi/play/ep%d", epId)
+	} else {
+		targetUrl = fmt.Sprintf("https://www.bilibili.com/video/%s", bvid)
+	}
+
+	logf("[resolve] 收到解析请求 bvid=%s epId=%s cid=%d qn=%d preferMp4=%v forceDash=%v", bvid, epIdRaw, cid, qn, preferMp4, forceDash)
 
 	result, err := ResolveBilibiliVideo(ResolveOptions{
-		Url:          fmt.Sprintf("https://www.bilibili.com/video/%s", bvid),
+		Url:          targetUrl,
 		Cookie:       cookie,
 		Qn:           qn,
 		PreferMp4:    preferMp4,
@@ -556,7 +579,7 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 			switch re.Code {
 			case "NOT_LOGGED_IN", "NO_PERMISSION":
 				code = http.StatusUnauthorized
-			case "VIDEO_NOT_FOUND", "INVALID_INPUT":
+			case "VIDEO_NOT_FOUND", "INVALID_INPUT", "EP_NOT_FOUND":
 				code = http.StatusBadRequest
 			}
 		}

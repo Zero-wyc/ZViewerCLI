@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,22 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+// allowInsecureTLS 是否跳过 TLS 证书校验（自签名/私有证书服务器场景）。
+var allowInsecureTLS bool
+
+// SetAllowInsecureTLS 设置是否信任自签名/无效证书。
+func SetAllowInsecureTLS(v bool) {
+	if allowInsecureTLS == v {
+		return
+	}
+	allowInsecureTLS = v
+	if v {
+		logf("已启用不安全 TLS 模式：跳过服务器证书校验（仅建议自签名证书场景使用）")
+	} else {
+		logf("已关闭不安全 TLS 模式：恢复标准证书校验")
+	}
+}
 
 // SocketClient 是一个最小化的 Socket.IO v4 客户端。
 type SocketClient struct {
@@ -76,6 +93,10 @@ func connectSocket(serverURL, user, proxyURL string, state *State) (*SocketClien
 	}
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
+	if allowInsecureTLS {
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // 用户显式开启，用于自签名证书
+		logf("TLS 证书校验已跳过（--insecure），用于自签名/私有证书服务器")
+	}
 	conn, _, err := dialer.Dial(wsURL, http.Header{})
 	if err != nil {
 		return nil, err

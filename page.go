@@ -206,6 +206,10 @@ const setupPageHTML = `<!DOCTYPE html>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
         服务器连接
       </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="insecureTls" />
+        <span>信任自签名证书（服务器 HTTPS 证书无效/自签名时勾选）</span>
+      </label>
       <div class="btn-row">
         <button class="btn btn-primary" id="connectBtn" type="button">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
@@ -281,6 +285,7 @@ const setupPageHTML = `<!DOCTYPE html>
     const connectBtn = document.getElementById('connectBtn')
     const connectStatus = document.getElementById('connectStatus')
     const disconnectBtn = document.getElementById('disconnectBtn')
+    const insecureTlsEl = document.getElementById('insecureTls')
     // 注册归属用户名：网页端打开配置页时经 ?user= 传入，CLI 注册时上报，
     // 前端据此只认自己的代理；CLI 进程内沿用 /api/config 返回的值
     let userParam = params.get('user') || ''
@@ -395,7 +400,7 @@ const setupPageHTML = `<!DOCTYPE html>
         const res = await fetch('/api/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serverUrl: server, user: userParam, cookie })
+          body: JSON.stringify({ serverUrl: server, user: userParam, cookie, insecure: insecureTlsEl.checked })
         })
         const data = await res.json()
         if (!res.ok || !data.success) throw new Error(data.message || '连接失败')
@@ -438,6 +443,7 @@ const setupPageHTML = `<!DOCTYPE html>
           cookieEl.value = data.config.cookie
           updateCookieState(data.cookieValid, data.userInfo && data.userInfo.name)
         }
+        if (typeof data.insecure === 'boolean') insecureTlsEl.checked = data.insecure
         roomState.connected = !!data.connected
         roomState.connecting = !!data.connecting
         if (roomState.connecting) {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	version   = "0.2.0"
+	version   = "0.2.1"
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
@@ -26,6 +26,7 @@ func main() {
 		serverURL string
 		user      string
 		cookie    string
+		insecure  bool
 		setupMode bool
 		noOpen    bool
 		showHelp  bool
@@ -35,10 +36,14 @@ func main() {
 	flag.StringVar(&serverURL, "server", "", "ZViewer 后端地址")
 	flag.StringVar(&user, "user", "", "注册归属用户名（网页端经 ?user= 传入）")
 	flag.StringVar(&cookie, "cookie", "", "B站 Cookie")
+	flag.BoolVar(&insecure, "insecure", false, "信任自签名/无效 TLS 证书（跳过证书校验，也可用环境变量 ZVIEWER_CLI_INSECURE=1）")
 	flag.BoolVar(&setupMode, "setup", true, "启动本地配置页面")
 	flag.BoolVar(&noOpen, "no-open", true, "不自动打开浏览器")
 	flag.BoolVar(&showHelp, "help", false, "显示帮助")
 	flag.Parse()
+
+	// 旗标优先，其次环境变量 ZVIEWER_CLI_INSECURE=1
+	SetAllowInsecureTLS(insecure || os.Getenv("ZVIEWER_CLI_INSECURE") == "1")
 
 	if showHelp {
 		printHelp()
@@ -124,7 +129,8 @@ CLI 全局注册到服务器（不绑定房间）：只需填写后端地址 + B
 示例:
   zviewer-cli                          # 启动命令行（不自动打开浏览器）
   zviewer-cli --no-open=false          # 启动时自动打开浏览器
-  zviewer-cli --server http://localhost:3333 --cookie "..."`)
+  zviewer-cli --server http://localhost:3333 --cookie "..."
+  zviewer-cli --server https://example.com --insecure   # 自签名证书服务器`)
 }
 
 func urlEncode(s string) string {

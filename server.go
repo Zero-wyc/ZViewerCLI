@@ -296,16 +296,21 @@ func (a *Agent) handleConfig(w http.ResponseWriter, r *http.Request) {
 			"connecting":  a.state.Connecting,
 			"userInfo":    a.state.UserInfo,
 			"cookieValid": a.state.CookieValid,
+			"insecure":    allowInsecureTLS,
 		})
 	case http.MethodPost:
 		var body struct {
 			ServerURL string `json:"serverUrl"`
 			User      string `json:"user"`
 			Cookie    string `json:"cookie"`
+			Insecure  *bool  `json:"insecure"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求体解析失败"})
 			return
+		}
+		if body.Insecure != nil {
+			SetAllowInsecureTLS(*body.Insecure)
 		}
 		if strings.TrimSpace(body.ServerURL) == "" {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少 serverUrl"})
@@ -409,10 +414,14 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 		ServerURL string `json:"serverUrl"`
 		User      string `json:"user"`
 		Cookie    string `json:"cookie"`
+		Insecure  *bool  `json:"insecure"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求体解析失败"})
 		return
+	}
+	if body.Insecure != nil {
+		SetAllowInsecureTLS(*body.Insecure)
 	}
 	if strings.TrimSpace(body.ServerURL) == "" {
 		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少后端地址"})

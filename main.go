@@ -57,9 +57,10 @@ func main() {
 		logf("加载本地配置失败: %v", err)
 	}
 
-	cfg := &LocalConfig{}
-	if persisted != nil && persisted.Cookie != "" {
+	cfg := &LocalConfig{ResolveSource: resolveSourceHost}
+	if persisted != nil {
 		cfg.Cookie = persisted.Cookie
+		cfg.ResolveSource = normalizeResolveSource(persisted.ResolveSource)
 	}
 
 	if serverURL != "" {

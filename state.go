@@ -9,6 +9,9 @@ type LocalConfig struct {
 	ServerURL string `json:"serverUrl"`
 	User      string `json:"user,omitempty"`
 	Cookie    string `json:"cookie"`
+	// ResolveSource 是解析来源："host"（房主直链，默认）或 "local"（本地 Cookie）。
+	// host 模式不需要登录 B站，Cookie 可留空。
+	ResolveSource string `json:"resolveSource"`
 }
 
 // State 代理状态，用于服务端读取。
@@ -45,6 +48,13 @@ func (s *State) SetCookieValid(v bool) {
 	s.mu.Lock()
 	b := v
 	s.CookieValid = &b
+	s.mu.Unlock()
+}
+
+// ClearCookieValid 把 Cookie 状态恢复为「未设置」（房主直链模式无需登录）。
+func (s *State) ClearCookieValid() {
+	s.mu.Lock()
+	s.CookieValid = nil
 	s.mu.Unlock()
 }
 

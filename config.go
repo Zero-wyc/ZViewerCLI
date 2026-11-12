@@ -8,13 +8,31 @@ import (
 
 // PersistedConfig 是保存到本地的 CLI 配置。
 type PersistedConfig struct {
-	Cookie   string `json:"cookie"`
-	SavedAt  string `json:"savedAt"`
-	UserInfo *struct {
+	Cookie  string `json:"cookie"`
+	SavedAt string `json:"savedAt"`
+	// ResolveSource 是解析来源偏好：host（房主直链，默认）或 local（本地 Cookie）。
+	// 空值表示旧版配置，读取时按 host 处理。
+	ResolveSource string `json:"resolveSource,omitempty"`
+	UserInfo      *struct {
 		Name      string `json:"name,omitempty"`
 		Mid       int64  `json:"mid,omitempty"`
 		VipStatus int    `json:"vipStatus,omitempty"`
 	} `json:"userInfo,omitempty"`
+}
+
+const (
+	// resolveSourceHost：服务端用房主的 B站 身份解析，观众无需登录。
+	resolveSourceHost = "host"
+	// resolveSourceLocal：用本机 Cookie 解析，少一次服务端往返、首帧更快。
+	resolveSourceLocal = "local"
+)
+
+// normalizeResolveSource 把任意输入归一化成 host / local，未知值按 host。
+func normalizeResolveSource(v string) string {
+	if v == resolveSourceLocal {
+		return resolveSourceLocal
+	}
+	return resolveSourceHost
 }
 
 const configDirName = ".zviewer"
@@ -74,9 +92,8 @@ func loadConfig() (*PersistedConfig, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	if cfg.Cookie == "" {
-		return nil, nil
-	}
+	// 不再因 Cookie 为空返回 nil：房主直链模式（默认）本来就不需要登录，
+	// 解析来源偏好必须能单独持久化。
 	return &cfg, nil
 }
 
@@ -107,6 +124,10 @@ func saveUserConfig(cookie string, info *UserValidation) error {
 		Cookie:  cookie,
 		SavedAt: nowISO(),
 	}
+	// 登录/刷新 Cookie 不应覆盖已有的解析来源选择。
+	if prev, err := loadConfig(); err == nil && prev != nil {
+		cfg.ResolveSource = prev.ResolveSource
+	}
 	if info != nil {
 		cfg.UserInfo = &struct {
 			Name      string `json:"name,omitempty"`
@@ -118,6 +139,19 @@ func saveUserConfig(cookie string, info *UserValidation) error {
 			VipStatus: info.VipStatus,
 		}
 	}
+	return saveConfig(cfg)
+}
+
+// saveResolveSource 单独持久化解析来源（允许在没有 Cookie 的情况下保存）。
+func saveResolveSource(source string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		cfg = &PersistedConfig{}
+	}
+	cfg.ResolveSource = normalizeResolveSource(source)
 	return saveConfig(cfg)
 }
 

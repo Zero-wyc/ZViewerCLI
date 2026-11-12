@@ -87,6 +87,19 @@ const setupPageHTML = `<!DOCTYPE html>
     .input:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(45,212,191,0.12); }
     .textarea { min-height: 84px; resize: vertical; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; }
     select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 32px; }
+    .field .source-option {
+      display: flex; align-items: flex-start; gap: 10px; margin: 0 0 8px;
+      padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: rgba(5, 7, 10, 0.35);
+      cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .field .source-option:last-child { margin-bottom: 0; }
+    .field .source-option:has(input:checked) {
+      border-color: rgba(45,212,191,0.55); background: rgba(45,212,191,0.07);
+    }
+    .field .source-option input { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+    .source-option .source-title { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+    .source-option .source-hint { display: block; font-size: 12px; color: var(--text-subtle); margin-top: 3px; line-height: 1.55; }
     .row { display: flex; gap: 12px; }
     .row .field { flex: 1; }
     .btn {
@@ -180,6 +193,24 @@ const setupPageHTML = `<!DOCTYPE html>
           <label>后端地址</label>
           <input type="text" id="server" class="input" placeholder="http://localhost:3333" />
         </div>
+      </div>
+
+      <div class="field">
+        <label>解析来源</label>
+        <label class="source-option">
+          <input type="radio" name="resolveSource" value="host" id="sourceHost" checked />
+          <span>
+            <span class="source-title">房主直链（默认）</span>
+            <span class="source-hint">无需登录 B站：由服务器用房间房主的账号解析，媒体流仍由本机 CLI 直连 CDN（不占服务器带宽）。画质取决于房主账号。</span>
+          </span>
+        </label>
+        <label class="source-option">
+          <input type="radio" name="resolveSource" value="local" id="sourceLocal" />
+          <span>
+            <span class="source-title">本地 Cookie</span>
+            <span class="source-hint">少一次服务端往返，首帧更快、延迟更低；画质由你自己的账号决定（大会员可用 4K/HDR），需要登录 B站。</span>
+          </span>
+        </label>
       </div>
 
       <div class="field">
@@ -311,7 +342,9 @@ const setupPageHTML = `<!DOCTYPE html>
       const c = cookieEl.value.trim()
       cookieStateEl.classList.remove('empty', 'valid', 'invalid')
       if (!c) {
-        cookieStateEl.textContent = '未设置 Cookie'
+        cookieStateEl.textContent = currentSource() === 'host'
+          ? '房主直链模式无需登录 B站（登录后可切到本地 Cookie 解析）'
+          : '未设置 Cookie'
         cookieStateEl.classList.add('empty')
         return
       }
@@ -384,12 +417,28 @@ const setupPageHTML = `<!DOCTYPE html>
 
     qrBtn.addEventListener('click', startQrLogin)
 
+    const sourceHostEl = document.getElementById('sourceHost')
+    const sourceLocalEl = document.getElementById('sourceLocal')
+
+    function currentSource() {
+      return sourceLocalEl && sourceLocalEl.checked ? 'local' : 'host'
+    }
+    function setSource(value) {
+      const local = value === 'local'
+      if (sourceHostEl) sourceHostEl.checked = !local
+      if (sourceLocalEl) sourceLocalEl.checked = local
+      updateCookieState(null)
+    }
+    if (sourceHostEl) sourceHostEl.addEventListener('change', () => updateCookieState(null))
+    if (sourceLocalEl) sourceLocalEl.addEventListener('change', () => updateCookieState(null))
+
     connectBtn.addEventListener('click', async () => {
       const server = serverEl.value.trim()
       const cookie = cookieEl.value.trim()
+      const source = currentSource()
 
       if (!server) { setStatus(connectStatus, '请填写后端地址', 'error'); return }
-      if (!cookie) { setStatus(connectStatus, '请先设置 B站 Cookie', 'error'); return }
+      if (source === 'local' && !cookie) { setStatus(connectStatus, '本地 Cookie 解析需要先登录 B站', 'error'); return }
 
       connectBtn.disabled = true
       roomState.connecting = true
@@ -400,7 +449,7 @@ const setupPageHTML = `<!DOCTYPE html>
         const res = await fetch('/api/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ serverUrl: server, user: userParam, cookie, insecure: insecureTlsEl.checked })
+          body: JSON.stringify({ serverUrl: server, user: userParam, cookie, resolveSource: source, insecure: insecureTlsEl.checked })
         })
         const data = await res.json()
         if (!res.ok || !data.success) throw new Error(data.message || '连接失败')
@@ -436,6 +485,7 @@ const setupPageHTML = `<!DOCTYPE html>
     fetch('/api/config')
       .then(r => r.json())
       .then(data => {
+        setSource((data.config && data.config.resolveSource) || 'host')
         if (!data.config) return
         if (data.config.serverUrl && !serverEl.value) serverEl.value = data.config.serverUrl
         if (data.config.user && !userParam) userParam = data.config.user
@@ -508,7 +558,12 @@ const setupPageHTML = `<!DOCTYPE html>
       const raw = testInput.value.trim()
       if (!raw) { setStatus(testStatus, '请输入 B站视频链接或 BV号', 'error'); return }
       const cookie = cookieEl.value.trim()
-      if (!cookie) { setStatus(testStatus, '请先设置 B站 Cookie', 'error'); return }
+      if (!cookie) {
+        setStatus(testStatus, currentSource() === 'host'
+          ? '此测试走本机解析，需要 B站 Cookie；日常请在 ZViewer 房间内使用房主直链'
+          : '请先设置 B站 Cookie', 'error')
+        return
+      }
 
       testBtn.disabled = true
       setStatus(testStatus, '正在解析…')

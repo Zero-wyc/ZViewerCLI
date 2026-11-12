@@ -36,6 +36,7 @@ type SocketClient struct {
 	serverURL      string
 	user           string
 	proxyURL       string
+	resolveSource  string
 	state          *State
 	onDisconnect   func()
 	stopKeepAlive  chan struct{}
@@ -86,7 +87,7 @@ func toWebSocketURL(serverURL string) (string, error) {
 	return u.String(), nil
 }
 
-func connectSocket(serverURL, user, proxyURL string, state *State) (*SocketClient, error) {
+func connectSocket(serverURL, user, proxyURL, resolveSource string, state *State) (*SocketClient, error) {
 	wsURL, err := toWebSocketURL(serverURL)
 	if err != nil {
 		return nil, err
@@ -107,6 +108,7 @@ func connectSocket(serverURL, user, proxyURL string, state *State) (*SocketClien
 		serverURL:      serverURL,
 		user:           user,
 		proxyURL:       proxyURL,
+		resolveSource:  normalizeResolveSource(resolveSource),
 		state:          state,
 		stopKeepAlive:  make(chan struct{}),
 		pingInterval:   defaultPingInterval,
@@ -175,9 +177,10 @@ func (c *SocketClient) register() error {
 	// 全局注册：不再上报 roomId，CLI 对服务器上所有房间可用；
 	// user 为注册归属（网页端配置页经 ?user= 传入），前端据此过滤自己的代理
 	payload := map[string]any{
-		"proxyUrl": c.proxyURL,
-		"agent":    "zcontrol-cli",
-		"version":  version,
+		"proxyUrl":      c.proxyURL,
+		"agent":         "zcontrol-cli",
+		"version":       version,
+		"resolveSource": c.resolveSource,
 	}
 	if c.user != "" {
 		payload["user"] = c.user

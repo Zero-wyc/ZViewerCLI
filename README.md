@@ -35,6 +35,9 @@ ZViewerCLI 通过本地代理的方式解决这些问题：Cookie 只留在用�
 
 ## 功能特性
 
+- **两种解析来源**：
+  - **房主直链（默认）**：由 ZViewer 服务端用房间房主的 B站 账号解析，观众**无需登录 B站**；媒体流仍由本机 CLI 直连 CDN，服务器不中转视频数据。画质取决于房主账号。
+  - **本地 Cookie**：用本机 Cookie 解析，少一次服务端往返，首帧更快、延迟更低；画质由自己的账号决定（大会员可用 4K/HDR），需要登录。
 - **本地 Cookie 解析**：使用用户自己的 Bilibili Cookie 解析视频，支持大会员高画质。
 - **视频流代理**：代理 Bilibili CDN 视频/音频流，注入正确的请求头，绕过 CORS 与防盗链。
 - **CDN 自动切换**：单个 CDN 连接失败时，自动尝试备用 CDN 地址。
@@ -112,9 +115,14 @@ chmod +x zviewer-cli-darwin-arm64
 在配置页面填写：
 
 - **ZViewer 后端地址**：例如 `http://localhost:3333` 或 `https://your-domain.com`
-- **Bilibili Cookie**：可通过二维码登录自动获取，或手动粘贴
+- **解析来源**：
+  - **房主直链（默认）**：无需登录 B站，直接点连接即可；画质由房主账号决定。
+  - **本地 Cookie**：需要先扫码登录或粘贴 Cookie；延迟更低，画质由自己的账号决定。
+- **Bilibili Cookie**：选择「本地 Cookie」时必填；选「房主直链」时可留空（仍可登录，便于随时切换）。
 
-点击连接后，CLI 会验证 Cookie 并全局注册到服务器（不绑定房间，所有房间可用）。
+点击连接后，CLI 校验 Cookie（仅本地解析模式）并全局注册到服务器（不绑定房间，所有房间可用）。解析来源会随注册一起上报，房间内「Bilibili 解析设置」会显示当前来源。
+
+> 房主直链依赖服务端设置「允许 CLI 使用房主的 B站 身份解析直链」。管理员关闭后，CLI 会收到明确错误，此时只能改用本地 Cookie 解析。
 
 ### 4. 在房间中启用
 
@@ -185,9 +193,12 @@ Content-Type: application/json
 {
   "serverUrl": "http://localhost:3333",
   "user": "username",
-  "cookie": "SESSDATA=xxx"
+  "cookie": "SESSDATA=xxx",
+  "resolveSource": "host"
 }
 ```
+
+`resolveSource` 取 `host`（房主直链，默认）或 `local`（本地 Cookie）。选 `local` 时 `cookie` 必填。
 
 ### 解析 Bilibili 视频
 
@@ -196,6 +207,8 @@ GET /resolve?bvid=BVxxx&cid=123456&qn=120&preferMp4=false&forceDash=true
 ```
 
 返回包含代理后的 `videoUrl` / `audioUrl` 以及原始 CDN 地址。
+
+> 该端点始终使用本地 Cookie 解析。`resolveSource=host` 且未登录时返回 409 与可操作提示——房主直链的解析由 ZViewer 前端向服务端发起，CLI 只负责 `/proxy` 转发。
 
 ### 代理视频流
 

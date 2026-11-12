@@ -116,13 +116,20 @@ func (a *Agent) proxyURL() string {
 }
 
 func (a *Agent) setConfig(cfg *LocalConfig) {
+	if cfg != nil {
+		cfg.ResolveSource = normalizeResolveSource(cfg.ResolveSource)
+	}
 	a.state.SetConfig(cfg)
 }
 
 func (a *Agent) doConnect() error {
 	cfg := a.state.Config
-	if cfg == nil || cfg.ServerURL == "" || cfg.Cookie == "" {
+	if cfg == nil || cfg.ServerURL == "" {
 		return fmt.Errorf("配置不完整")
+	}
+	source := normalizeResolveSource(cfg.ResolveSource)
+	if source == resolveSourceLocal && cfg.Cookie == "" {
+		return fmt.Errorf("本地 Cookie 解析需要先登录 B站")
 	}
 	if a.state.Connecting {
 		return fmt.Errorf("正在连接中")
@@ -137,7 +144,7 @@ func (a *Agent) doConnect() error {
 	if os.Getenv("ZVIEWER_CLI_SKIP_COOKIE") == "1" {
 		a.state.SetCookieValid(true)
 		a.state.SetUserInfo(newUserInfoMap("test", 0, 0))
-	} else {
+	} else if cfg.Cookie != "" {
 		validation, err := validateCookie(cfg.Cookie)
 		if err != nil {
 			a.state.SetConnecting(false)
@@ -151,9 +158,12 @@ func (a *Agent) doConnect() error {
 		}
 		a.state.SetUserInfo(newUserInfoMap(validation.Name, validation.Mid, validation.VipStatus))
 		_ = saveUserConfig(cfg.Cookie, validation)
+	} else {
+		// 房主直链模式：不需要 B站 账号，也不再展示 Cookie 状态。
+		a.state.ClearCookieValid()
 	}
 
-	client, err := connectSocket(cfg.ServerURL, cfg.User, a.proxyURL(), a.state)
+	client, err := connectSocket(cfg.ServerURL, cfg.User, a.proxyURL(), source, a.state)
 	if err != nil {
 		a.state.SetConnecting(false)
 		a.state.SetLastError(err.Error())
@@ -300,10 +310,11 @@ func (a *Agent) handleConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	case http.MethodPost:
 		var body struct {
-			ServerURL string `json:"serverUrl"`
-			User      string `json:"user"`
-			Cookie    string `json:"cookie"`
-			Insecure  *bool  `json:"insecure"`
+			ServerURL     string  `json:"serverUrl"`
+			User          string  `json:"user"`
+			Cookie        string  `json:"cookie"`
+			ResolveSource *string `json:"resolveSource"`
+			Insecure      *bool   `json:"insecure"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求体解析失败"})
@@ -316,15 +327,29 @@ func (a *Agent) handleConfig(w http.ResponseWriter, r *http.Request) {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少 serverUrl"})
 			return
 		}
+		source := resolveSourceHost
+		if a.state.Config != nil && a.state.Config.ResolveSource != "" {
+			source = normalizeResolveSource(a.state.Config.ResolveSource)
+		}
+		if body.ResolveSource != nil {
+			source = normalizeResolveSource(*body.ResolveSource)
+		}
 		cfg := &LocalConfig{
-			ServerURL: strings.TrimSpace(body.ServerURL),
-			User:      strings.TrimSpace(body.User),
-			Cookie:    strings.TrimSpace(body.Cookie),
+			ServerURL:     strings.TrimSpace(body.ServerURL),
+			User:          strings.TrimSpace(body.User),
+			Cookie:        strings.TrimSpace(body.Cookie),
+			ResolveSource: source,
 		}
 		if cfg.Cookie == "" && a.state.Config != nil {
 			cfg.Cookie = a.state.Config.Cookie
 		}
+		// 本地解析必须有 Cookie；房主直链模式允许留空。
+		if cfg.ResolveSource == resolveSourceLocal && cfg.Cookie == "" {
+			jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "本地 Cookie 解析需要先登录 B站"})
+			return
+		}
 		a.setConfig(cfg)
+		_ = saveResolveSource(cfg.ResolveSource)
 
 		if cfg.Cookie != "" {
 			validation, err := validateCookie(cfg.Cookie)
@@ -411,10 +436,11 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ServerURL string `json:"serverUrl"`
-		User      string `json:"user"`
-		Cookie    string `json:"cookie"`
-		Insecure  *bool  `json:"insecure"`
+		ServerURL     string  `json:"serverUrl"`
+		User          string  `json:"user"`
+		Cookie        string  `json:"cookie"`
+		ResolveSource *string `json:"resolveSource"`
+		Insecure      *bool   `json:"insecure"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求体解析失败"})
@@ -427,15 +453,25 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少后端地址"})
 		return
 	}
-	if strings.TrimSpace(body.Cookie) == "" {
-		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "缺少 B站 Cookie"})
+	source := resolveSourceHost
+	if a.state.Config != nil && a.state.Config.ResolveSource != "" {
+		source = normalizeResolveSource(a.state.Config.ResolveSource)
+	}
+	if body.ResolveSource != nil {
+		source = normalizeResolveSource(*body.ResolveSource)
+	}
+	cookie := strings.TrimSpace(body.Cookie)
+	if source == resolveSourceLocal && cookie == "" {
+		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "本地 Cookie 解析需要先登录 B站"})
 		return
 	}
 	a.setConfig(&LocalConfig{
-		ServerURL: strings.TrimSpace(body.ServerURL),
-		User:      strings.TrimSpace(body.User),
-		Cookie:    strings.TrimSpace(body.Cookie),
+		ServerURL:     strings.TrimSpace(body.ServerURL),
+		User:          strings.TrimSpace(body.User),
+		Cookie:        cookie,
+		ResolveSource: source,
 	})
+	_ = saveResolveSource(source)
 
 	if err := a.doConnect(); err != nil {
 		a.state.SetLastError(err.Error())
@@ -537,6 +573,12 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie := a.resolveCookie(r)
 	if cookie == "" {
+		// 房主直链模式下 CLI 不负责解析，给一条能指导下一步的提示，
+		// 避免用户以为是 Cookie 没填对。
+		if a.state.Config != nil && normalizeResolveSource(a.state.Config.ResolveSource) == resolveSourceHost {
+			http.Error(w, `{"error":"当前为房主直链模式：请在 ZViewer 房间内播放；如需本机解析，请在配置页切换为「本地 Cookie」并登录 B站"}`, http.StatusConflict)
+			return
+		}
 		http.Error(w, `{"error":"缺少 B站 Cookie"}`, http.StatusBadRequest)
 		return
 	}

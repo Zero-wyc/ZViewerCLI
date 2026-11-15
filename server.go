@@ -383,6 +383,8 @@ func (a *Agent) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		a.setConfig(cfg)
 		_ = saveResolveSource(cfg.ResolveSource)
+		// 连接信息落盘：重启后自动回填并自动连接（房主直链模式重启不再失联）。
+		_ = saveConnectionConfig(cfg)
 
 		if cfg.Cookie != "" {
 			validation, err := validateCookie(cfg.Cookie)
@@ -505,6 +507,8 @@ func (a *Agent) handleConnect(w http.ResponseWriter, r *http.Request) {
 		ResolveSource: source,
 	})
 	_ = saveResolveSource(source)
+	// 连接信息落盘：重启后自动回填并自动连接（房主直链模式重启不再失联）。
+	_ = saveConnectionConfig(a.state.Config)
 
 	if err := a.doConnect(); err != nil {
 		a.state.SetLastError(err.Error())
@@ -850,9 +854,34 @@ func (a *Agent) doProxyRequest(w http.ResponseWriter, r *http.Request, target st
 
 	w.WriteHeader(res.StatusCode)
 	logReader := newSpeedLoggerReader(res.Body, hostFromURL(target))
-	_, _ = io.Copy(w, logReader)
+	copyStreaming(w, logReader)
 	logReader.finish()
 	return res, nil
+}
+
+// copyStreaming 把上游响应体写给客户端，每读必写、写后立即 flush。
+//
+// 与点播分段不同，直播是一根实时吐数据的流：Go 的 ResponseWriter 自带
+// 缓冲，小段数据会攒在缓冲里等下一次写满才上线——观众侧表现为起播慢、
+// 码率低谷期画面一顿一顿。后端 streamBody（internal/proxy/upstream.go）
+// 同样逐次 flush，这里必须对齐。缓冲取 64KB：大于 FLV 直播常见的单次
+// 到达量，同时避免过小缓冲带来的高频系统调用。
+func copyStreaming(w http.ResponseWriter, body io.Reader) {
+	buf := make([]byte, 64<<10)
+	rc := http.NewResponseController(w)
+	for {
+		n, readErr := body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				// 客户端断开（关闭页面 / flv.js 重连）：终止转发即可。
+				return
+			}
+			_ = rc.Flush()
+		}
+		if readErr != nil {
+			return
+		}
+	}
 }
 
 func (a *Agent) startHTTPServer() (*http.Server, error) {

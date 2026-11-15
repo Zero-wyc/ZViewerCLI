@@ -61,6 +61,13 @@ func main() {
 	if persisted != nil {
 		cfg.Cookie = persisted.Cookie
 		cfg.ResolveSource = normalizeResolveSource(persisted.ResolveSource)
+		// 恢复持久化的连接信息：旗标仍然优先（显式传入覆盖磁盘配置）。
+		if persisted.ServerURL != "" {
+			cfg.ServerURL = persisted.ServerURL
+		}
+		if persisted.User != "" {
+			cfg.User = persisted.User
+		}
 	}
 
 	if serverURL != "" {
@@ -102,7 +109,12 @@ func main() {
 		}
 	}
 
-	if cfg.ServerURL != "" && cfg.Cookie != "" {
+	// 自动连接条件：配置了后端地址，且「本地 Cookie 模式已登录」或「房主直链模式」。
+	// 房主直链（默认）不需要本机 Cookie——解析由服务端房主身份完成，CLI 只负责
+	// 转发。此前这里额外要求 Cookie 非空，导致房主直链模式下每次启动都不注册，
+	// 用户必须手动打开配置页点一次「连接」才能被网页端看到，表现为「房主直链
+	// 不可用」。
+	if cfg.ServerURL != "" && (cfg.Cookie != "" || normalizeResolveSource(cfg.ResolveSource) == resolveSourceHost) {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			if err := agent.doConnect(); err != nil {

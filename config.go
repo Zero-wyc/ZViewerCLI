@@ -4,12 +4,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // PersistedConfig 是保存到本地的 CLI 配置。
 type PersistedConfig struct {
-	Cookie  string `json:"cookie"`
-	SavedAt string `json:"savedAt"`
+	// ServerURL / User 也持久化：否则 CLI 每次重启都要手动重新填后端地址，
+	// 房主直链模式下（无 Cookie）重启后什么都不会发生——不注册、不连接，
+	// 网页端看不到代理，表现为「房主直链不可用」。
+	ServerURL string `json:"serverUrl,omitempty"`
+	User      string `json:"user,omitempty"`
+	Cookie    string `json:"cookie"`
+	SavedAt   string `json:"savedAt"`
 	// ResolveSource 是解析来源偏好：host（房主直链，默认）或 local（本地 Cookie）。
 	// 空值表示旧版配置，读取时按 host 处理。
 	ResolveSource string `json:"resolveSource,omitempty"`
@@ -153,6 +159,37 @@ func saveResolveSource(source string) error {
 	}
 	cfg.ResolveSource = normalizeResolveSource(source)
 	return saveConfig(cfg)
+}
+
+// saveConnectionConfig 持久化连接信息（后端地址 + 归属用户名）。
+//
+// 每次成功发起连接时调用：重启 CLI 后据此自动回填并自动连接，
+// 房主直链模式（无 Cookie）重启后不再「失联」。
+func saveConnectionConfig(cfg *LocalConfig) error {
+	if cfg == nil || strings.TrimSpace(cfg.ServerURL) == "" {
+		return nil
+	}
+	prev, err := loadConfig()
+	if err != nil {
+		prev = nil
+	}
+	persisted := &PersistedConfig{
+		ServerURL: strings.TrimSpace(cfg.ServerURL),
+		User:      strings.TrimSpace(cfg.User),
+		SavedAt:   nowISO(),
+	}
+	if prev != nil {
+		// 保留磁盘上已有的登录态，避免连接配置覆盖 Cookie / 用户信息。
+		persisted.Cookie = prev.Cookie
+		persisted.UserInfo = prev.UserInfo
+		if prev.ResolveSource != "" {
+			persisted.ResolveSource = prev.ResolveSource
+		}
+	}
+	if persisted.ResolveSource == "" {
+		persisted.ResolveSource = normalizeResolveSource(cfg.ResolveSource)
+	}
+	return saveConfig(persisted)
 }
 
 func newUserInfoMap(name string, mid int64, vipStatus int) map[string]any {

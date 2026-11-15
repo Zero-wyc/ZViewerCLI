@@ -218,6 +218,19 @@ GET /proxy?url=<url-encoded-bilibili-cdn-url>
 
 支持 `Range` 请求头，适合 DASH 分段加载。
 
+### 代理直播流
+
+```http
+GET /proxy?url=<url-encoded-live-cdn-url>&ref=live
+```
+
+`ref=live` 让 CLI 用 `https://live.bilibili.com` 作为 Referer/Origin（B站 直播 CDN
+与点播是两套防盗链口径，用点播的 Referer 会被 403），并改用**不带总超时**的
+客户端：直播是一根持续输出的长连接，带 60 秒超时就等于每分钟断流一次。
+
+浏览器无法自己给 FLV 请求加 Referer，所以 ZViewer 的「直播线路 = CLI」就是把
+直播地址包成本端点：媒体流由本机直连 CDN，服务器零媒体流量。
+
 ### 获取 Bilibili 视频信息
 
 ```http

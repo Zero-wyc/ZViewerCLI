@@ -24,6 +24,13 @@ var nachoBackground []byte
 // proxyUpstreamTimeoutMs 上游代理默认超时。
 const proxyUpstreamTimeoutMs = 60_000
 
+// 直播 CDN 的防盗链口径：Referer/Origin 必须是 live.bilibili.com。
+// 点播用 www.bilibili.com，两者不能混用（拿点播 Referer 拉直播流会被 403）。
+const (
+	vodReferer  = "https://www.bilibili.com"
+	liveReferer = "https://live.bilibili.com"
+)
+
 // proxyPassThroughHeaders 需要透传给客户端的上游响应头（与 backend http-proxy.ts 对齐）。
 var proxyPassThroughHeaders = []string{
 	"Content-Length",
@@ -46,13 +53,39 @@ var proxyHTTPClient = &http.Client{
 	CheckRedirect: func(nextReq *http.Request, via []*http.Request) error {
 		nextReq.Header.Set("User-Agent", userAgent)
 		nextReq.Header.Set("Accept", "*/*")
-		nextReq.Header.Set("Referer", "https://www.bilibili.com")
-		nextReq.Header.Set("Origin", "https://www.bilibili.com")
+		nextReq.Header.Set("Referer", vodReferer)
+		nextReq.Header.Set("Origin", vodReferer)
 		if len(via) > 0 {
 			if rng := via[len(via)-1].Header.Get("Range"); rng != "" {
 				nextReq.Header.Set("Range", rng)
 			}
 		}
+		if len(via) >= 10 {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	},
+}
+
+// liveProxyClient 专用于直播流：**不能设 Client.Timeout**。
+//
+// 直播是一根不断吐出 FLV 数据的长连接，请求本身永远「没结束」；带上点播用的
+// 60 秒总超时，观众看满一分钟就会被 CLI 自己掐断，表现为「每隔一分钟卡一次」。
+// 取消由客户端断开（写失败）或进程退出时自然结束。
+var liveProxyClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        16,
+		MaxIdleConnsPerHost: 8,
+		IdleConnTimeout:     90 * time.Second,
+		// 直播不能有「响应头超时」：某些边缘节点要等首个 GOP 才回头；
+		// 这里只靠 TCP 自身的超时兜底。
+		ResponseHeaderTimeout: 20 * time.Second,
+	},
+	CheckRedirect: func(nextReq *http.Request, via []*http.Request) error {
+		nextReq.Header.Set("User-Agent", userAgent)
+		nextReq.Header.Set("Accept", "*/*")
+		nextReq.Header.Set("Referer", liveReferer)
+		nextReq.Header.Set("Origin", liveReferer)
 		if len(via) >= 10 {
 			return http.ErrUseLastResponse
 		}
@@ -703,13 +736,22 @@ func (a *Agent) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ref=live：直播流（B站直播 CDN 与点播是两套防盗链口径）。
+	// 直播是长连接、永远不「响应完」，因此换用不带总超时的客户端，
+	// 否则观众每看满 60 秒就会被这个代理掐断一次。
+	live := r.URL.Query().Get("ref") == "live"
+
 	// 候选 URL：主 URL + backup URL。主 URL 失败时按顺序尝试其他 CDN。
+	// 直播地址带签名、没有候选概念，缓存里查不到就是自己一条。
 	candidates := append([]string{target}, a.getBackupUrls(target)...)
-	logf("[proxy] 收到代理请求，共 %d 个候选 URL", len(candidates))
+	if live {
+		candidates = []string{target}
+	}
+	logf("[proxy] 收到代理请求，共 %d 个候选 URL（live=%v）", len(candidates), live)
 
 	var lastErr error
 	for i, candidate := range candidates {
-		res, err := a.doProxyRequest(w, r, candidate)
+		res, err := a.doProxyRequest(w, r, candidate, live)
 		if err != nil {
 			lastErr = err
 			// 客户端已断开时不继续尝试，直接返回
@@ -746,7 +788,7 @@ func (a *Agent) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 // doProxyRequest 执行单次上游代理请求。若成功已将响应写入 w 并返回非 nil res；
 // 若发生可重试的网络/连接错误返回 err；上游返回非 2xx 时直接透传状态码并返回 nil err。
-func (a *Agent) doProxyRequest(w http.ResponseWriter, r *http.Request, target string) (*http.Response, error) {
+func (a *Agent) doProxyRequest(w http.ResponseWriter, r *http.Request, target string, live bool) (*http.Response, error) {
 	// 使用 context.Background() 而非 r.Context()，避免 dash.js seek 取消
 	// segment 请求时代理也被连锁取消。客户端断连时 io.Copy 会自然终止。
 	req, err := http.NewRequest(http.MethodGet, target, nil)
@@ -756,15 +798,22 @@ func (a *Agent) doProxyRequest(w http.ResponseWriter, r *http.Request, target st
 	}
 
 	// 上游请求头：与 backend http-proxy.ts 对齐，注入 B站 Referer/Origin 防盗链。
+	// 直播与点播的 Referer 不同域（live. / www.），用错会被 CDN 判 403。
+	referer := vodReferer
+	client := proxyHTTPClient
+	if live {
+		referer = liveReferer
+		client = liveProxyClient
+	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Referer", "https://www.bilibili.com")
-	req.Header.Set("Origin", "https://www.bilibili.com")
+	req.Header.Set("Referer", referer)
+	req.Header.Set("Origin", referer)
 	if rng := r.Header.Get("Range"); rng != "" {
 		req.Header.Set("Range", rng)
 	}
 
-	res, err := proxyHTTPClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -777,9 +826,12 @@ func (a *Agent) doProxyRequest(w http.ResponseWriter, r *http.Request, target st
 	}
 
 	// Content-Type 纠正：B站 CDN 偶发返回 application/json（实际是视频数据），
-	// 使用兜底 video/mp4 避免 MSE 引擎因类型不匹配拒绝处理。
+	// 使用兜底类型避免 MSE 引擎因类型不匹配拒绝处理。直播流同理兜底 video/x-flv。
 	upstreamContentType := res.Header.Get("Content-Type")
 	defaultContentType := "video/mp4"
+	if live {
+		defaultContentType = "video/x-flv"
+	}
 	if upstreamContentType != "" &&
 		strings.Contains(strings.ToLower(upstreamContentType), "application/json") &&
 		!strings.Contains(strings.ToLower(defaultContentType), "json") {

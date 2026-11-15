@@ -44,12 +44,11 @@ jobs:
             runner: ubuntu-latest
             upx: true
             ext: ''
-          - target: darwin-arm64
-            goos: darwin
-            goarch: arm64
-            runner: macos-14
-            upx: false
-            ext: ''
+          # macOS 不做 CI 自动构建：本仓库的 runner 组没有可用的 macOS 配置
+          # （darwin 任务会以 "The configuration 'macos-14-arm64-us-default'
+          # is not supported" 直接失败，后面的 release 也就跟着断）。
+          # 需要 macOS 产物时在本地交叉编译：
+          #   GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-darwin-arm64 .
 
     steps:
       - name: Checkout

@@ -96,9 +96,20 @@ dist/
 .\zviewer-cli-windows-amd64.exe
 ```
 
-#### macOS / Linux
+#### Linux
 
 ```bash
+chmod +x zviewer-cli-linux-amd64
+./zviewer-cli-linux-amd64
+```
+
+#### macOS
+
+Release 里**没有** macOS 产物（CI 不构建，见 [CI/CD 自动构建](#cicd-自动构建)），
+需要在本机交叉编译后运行：
+
+```bash
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o zviewer-cli-darwin-arm64 .
 chmod +x zviewer-cli-darwin-arm64
 ./zviewer-cli-darwin-arm64
 ```
@@ -383,16 +394,19 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-构建策略与本地脚本一致：
+构建策略：
 
 | 平台 | 压缩方式 | Runner |
 |------|---------|--------|
 | Windows amd64 | UPX `--best --lzma`（极限压缩） | `windows-latest` |
 | Linux amd64 | UPX `--best --lzma`（极限压缩） | `ubuntu-latest` |
 | Linux arm64 | UPX `--best --lzma`（极限压缩） | `ubuntu-latest`（交叉编译） |
-| macOS arm64 | 不压缩 | `macos-14` |
 
-> Windows 和 Linux 在 CI 中统一使用 `--best --lzma` 极限压缩；macOS 由于 UPX 不支持，跳过压缩步骤。
+> Windows 和 Linux 在 CI 中统一使用 `--best --lzma` 极限压缩。
+>
+> **macOS 不进 CI**：这个仓库的 runner 组没有可用的 macOS 配置，darwin 任务会以
+> `The configuration 'macos-14-arm64-us-default' is not supported` 直接失败，并把
+> 后面的 Release 一起带崩。需要 macOS 产物时用上面的「交叉编译」在本机生成。
 
 ---
 

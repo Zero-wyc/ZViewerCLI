@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -649,6 +650,13 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 
 	logf("[resolve] 收到解析请求 bvid=%s epId=%s cid=%d qn=%d preferMp4=%v forceDash=%v", bvid, epIdRaw, cid, qn, preferMp4, forceDash)
 
+	// 默认做本地 CDN 探测：CLI 与浏览器在同一台机器，只有本地探测才代表
+	// 用户网络；服务器侧探测的是机房出口，结论经常相反。
+	// 探测失败不阻断播放（resolver 会按非 mcdn 优先回退），但也绝不能回到
+	// 「直接跳过」——跳过会把 mcdn P2P 死链原样交给播放器，表现为点开 502。
+	// skipCdnCheck=1 仅保留给排障。
+	skipCdnCheck := q.Get("skipCdnCheck") == "1" || q.Get("skipCdnCheck") == "true"
+
 	result, err := ResolveBilibiliVideo(ResolveOptions{
 		Url:          targetUrl,
 		Cookie:       cookie,
@@ -656,9 +664,7 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 		PreferMp4:    preferMp4,
 		ForceDash:    forceDash,
 		Cid:          cid,
-		// CLI 使用本地代理播放，实际视频流由用户本机浏览器→CLI 拉取，
-		// 无需校验 B站 CDN 可达性，避免本地网络差异导致错误降级为 MP4。
-		SkipCdnCheck: true,
+		SkipCdnCheck: skipCdnCheck,
 	})
 	if err != nil {
 		logf("解析失败: %v", err)
@@ -754,16 +760,24 @@ func (a *Agent) handleProxy(w http.ResponseWriter, r *http.Request) {
 	logf("[proxy] 收到代理请求，共 %d 个候选 URL（live=%v）", len(candidates), live)
 
 	var lastErr error
+	// lastStatus 记录最后一个候选的 5xx：全部候选都 5xx 时透传它，
+	// 比笼统的 502 更能说明上游真实状态。
+	lastStatus := 0
 	for i, candidate := range candidates {
 		res, err := a.doProxyRequest(w, r, candidate, live)
 		if err != nil {
 			lastErr = err
+			var statusErr *proxyStatusError
+			if errors.As(err, &statusErr) {
+				lastStatus = statusErr.code
+			}
 			// 客户端已断开时不继续尝试，直接返回
 			if r.Context().Err() != nil {
 				return
 			}
-			// 连接类错误（拒绝连接、超时、DNS 失败）时尝试下一个 CDN；
-			// HTTP 4xx/5xx 状态码不在这里返回 err，因此会走成功分支透传状态码。
+			// 连接类错误（拒绝连接、超时、DNS 失败）与上游 5xx 都换下一个
+			// CDN 重试。这条是 mcdn 502 的正解：mcdn 回源失败时 upos 往往正常，
+			// 一个分段 502 不该让整段视频黑屏。
 			logf("[proxy] 候选 %d/%d 失败: %v", i+1, len(candidates), err)
 			if i < len(candidates)-1 {
 				continue
@@ -782,12 +796,28 @@ func (a *Agent) handleProxy(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
 		return
 	}
+	if lastStatus != 0 {
+		logf("[proxy] 所有候选均失败，透传上游状态码 %d", lastStatus)
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "所有 CDN 候选均不可用"), lastStatus)
+		return
+	}
 	if lastErr != nil {
 		logf("[proxy] 所有候选均失败 (%d 个): %v", len(candidates), lastErr)
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, lastErr.Error()), http.StatusBadGateway)
 		return
 	}
 	http.Error(w, `{"error":"代理请求失败"}`, http.StatusBadGateway)
+}
+
+// proxyStatusError 表示上游返回了 5xx：属于「换下一个候选可能就好了」的失败，
+// 因此不写响应头、交给外层循环重试。
+type proxyStatusError struct {
+	code   int
+	target string
+}
+
+func (e *proxyStatusError) Error() string {
+	return fmt.Sprintf("上游返回 %d（%s）", e.code, hostFromURL(e.target))
 }
 
 // doProxyRequest 执行单次上游代理请求。若成功已将响应写入 w 并返回非 nil res；
@@ -823,7 +853,14 @@ func (a *Agent) doProxyRequest(w http.ResponseWriter, r *http.Request, target st
 	}
 	defer res.Body.Close()
 
-	// 上游非 2xx 时透传状态码，让客户端（dash.js / video 标签）自行处理。
+	// 上游 5xx 属于「换个候选可能就好」：mcdn 回源失败常见 502，而同一时刻
+	// upos 正常。此时还没写响应头，交给外层循环换下一个候选重试。
+	if res.StatusCode >= 500 {
+		return nil, &proxyStatusError{code: res.StatusCode, target: target}
+	}
+
+	// 其余非 2xx 直接透传，让客户端（dash.js / video 标签）自行处理。
+	// 4xx 多半是防盗链或签名过期，换节点也救不回来。
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		w.WriteHeader(res.StatusCode)
 		return res, nil

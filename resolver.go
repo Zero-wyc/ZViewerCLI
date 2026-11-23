@@ -23,7 +23,66 @@ const (
 	defaultQn                = 80
 	vipDefaultQn             = 120
 	qn8K                     = 127
+	// mcdnProbeDelayMs 让 mcdn 候选晚一步启动探测（见 findReachableMediaUrl）。
+	mcdnProbeDelayMs = 300
 )
+
+// mcdnHostSuffix 是 B站 P2P 回源节点（mcdn）的域名后缀。
+//
+// 这类节点靠客户端 P2P 网络回源，CLI 直连经常 443/8082 不通或上游 502。
+// playurl 的 baseUrl 有一定概率就落在 mcdn 上，跳过探测就会把死链交给播放器。
+const mcdnHostSuffix = ".mcdn.bilivideo.cn"
+
+// isMcdnMediaUrl 判断地址是否落在 mcdn P2P 节点上。
+func isMcdnMediaUrl(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == strings.TrimPrefix(mcdnHostSuffix, ".") || strings.HasSuffix(host, mcdnHostSuffix)
+}
+
+// orderMediaCandidates 把主 + 备地址按「非 mcdn 优先」稳定分区。
+//
+// 稳定分区而不是整体排序：B站 给的候选顺序自带地域优先级，只把 mcdn 这一档
+// 整体挪到最后，其余保持原序。
+func orderMediaCandidates(baseUrl string, backupUrl []string) []string {
+	all := make([]string, 0, 1+len(backupUrl))
+	if baseUrl != "" {
+		all = append(all, baseUrl)
+	}
+	for _, u := range backupUrl {
+		if u != "" {
+			all = append(all, u)
+		}
+	}
+	if len(all) == 0 {
+		return nil
+	}
+	ordered := make([]string, 0, len(all))
+	for _, u := range all {
+		if !isMcdnMediaUrl(u) {
+			ordered = append(ordered, u)
+		}
+	}
+	for _, u := range all {
+		if isMcdnMediaUrl(u) {
+			ordered = append(ordered, u)
+		}
+	}
+	return ordered
+}
+
+// pickPreferredMediaUrl 在无法确认可达性时挑一条地址：非 mcdn 优先。
+//
+// 用于「探测全失败」的回退：不阻断播放，但也不把 mcdn 死链排在最前面。
+func pickPreferredMediaUrl(baseUrl string, backupUrl []string) string {
+	if candidates := orderMediaCandidates(baseUrl, backupUrl); len(candidates) > 0 {
+		return candidates[0]
+	}
+	return ""
+}
 
 // VIP 专属清晰度列表
 var vipOnlyQns = []int{112, 116, 120, 125, 126, 127}
@@ -946,56 +1005,62 @@ func checkUrlReachable(target string) bool {
 }
 
 // findReachableMediaUrl 并行检测所有候选 URL，返回第一个可达的 URL。
+//
+// 候选按「非 mcdn 优先」重排，且 mcdn 晚 300ms 才启动探测：mcdn 是 P2P 边缘
+// 节点，RTT 往往更低，纯并行时最容易「先到先得」抢走位置，而它恰恰是 CLI
+// 直连最容易失败的一档。延迟只调整优先级——非 mcdn 全不可达时仍会探测它。
 func findReachableMediaUrl(baseUrl string, backupUrl []string) (string, error) {
-	candidates := []string{baseUrl}
-	for _, u := range backupUrl {
-		if u != "" {
-			candidates = append(candidates, u)
-		}
-	}
+	candidates := orderMediaCandidates(baseUrl, backupUrl)
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("没有可用的媒体 URL")
+	}
+	hasDirect := false
+	for _, u := range candidates {
+		if !isMcdnMediaUrl(u) {
+			hasDirect = true
+			break
+		}
 	}
 
 	type result struct {
 		url string
 		ok  bool
 	}
+	// 缓冲满长度，避免探测协程在无人接收时阻塞泄漏。
 	ch := make(chan result, len(candidates))
-	var wg sync.WaitGroup
 	for _, u := range candidates {
-		wg.Add(1)
-		go func(target string) {
-			defer wg.Done()
-			ok := checkUrlReachable(target)
-			ch <- result{url: target, ok: ok}
-		}(u)
-	}
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-
-	done := make(chan string, 1)
-	go func() {
-		for r := range ch {
-			if r.ok {
-				done <- r.url
-				return
+		waitMs := 0
+		if hasDirect && isMcdnMediaUrl(u) {
+			waitMs = mcdnProbeDelayMs
+		}
+		go func(target string, wait int) {
+			if wait > 0 {
+				time.Sleep(time.Duration(wait) * time.Millisecond)
 			}
-		}
-		close(done)
-	}()
-
-	select {
-	case url, ok := <-done:
-		if !ok {
-			return "", fmt.Errorf("所有 CDN 均不可达")
-		}
-		return url, nil
-	case <-time.After(cdnHealthCheckTimeoutMs*time.Millisecond + 500*time.Millisecond):
-		return "", fmt.Errorf("CDN 健康检查超时")
+			ch <- result{url: target, ok: checkUrlReachable(target)}
+		}(u, waitMs)
 	}
+
+	timer := time.NewTimer(time.Duration(cdnHealthCheckTimeoutMs+mcdnProbeDelayMs+500) * time.Millisecond)
+	defer timer.Stop()
+
+	pending := len(candidates)
+	checked := 0
+	for pending > 0 {
+		select {
+		case res := <-ch:
+			pending--
+			checked++
+			if res.ok {
+				logf("[cdn] 候选 %d/%d 可用: %s", checked, len(candidates), hostFromURL(res.url))
+				return res.url, nil
+			}
+			logf("[cdn] 候选 %d/%d 不可达: %s", checked, len(candidates), hostFromURL(res.url))
+		case <-timer.C:
+			return "", fmt.Errorf("CDN 健康检查超时（%d 个候选）", len(candidates))
+		}
+	}
+	return "", fmt.Errorf("所有 CDN 均不可达（%d 个候选）", len(candidates))
 }
 
 // ===================== resolver.ts =====================
@@ -1268,41 +1333,47 @@ func ResolveBilibiliVideo(opts ResolveOptions) (*ResolveResult, error) {
 		videoBackupUrls, audioBackupUrls := collectBackupUrls(playUrl.BestVideo, playUrl.BestAudio)
 
 		// 对候选 CDN 做本地可达性探测。
-		// CLI 与用户浏览器在同一台机器，本地探测结果具有参考价值；
-		// SkipCdnCheck 为 true 时探测失败不阻断、不降级 MP4，仅回退到 BaseUrl。
+		// CLI 与用户浏览器在同一台机器，本地探测结果才有参考价值——服务器侧
+		// 探测的是机房网络，拿它判断用户能不能连 mcdn 会得出相反结论。
 		var videoUrl, audioUrl string
 		var videoErr, audioErr error
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			videoUrl, videoErr = findReachableMediaUrl(playUrl.BestVideo.BaseUrl, playUrl.BestVideo.BackupUrl)
-		}()
-		if playUrl.BestAudio != nil {
+		if opts.SkipCdnCheck {
+			// 显式跳过的语义只剩「不探测」：仍按非 mcdn 优先挑，不能直接下发 baseUrl。
+			videoUrl = pickPreferredMediaUrl(playUrl.BestVideo.BaseUrl, playUrl.BestVideo.BackupUrl)
+			if playUrl.BestAudio != nil {
+				audioUrl = pickPreferredMediaUrl(playUrl.BestAudio.BaseUrl, playUrl.BestAudio.BackupUrl)
+			}
+			logf("[bilibili] SkipCdnCheck 已开启，跳过探测，按非 mcdn 优先选择: %s", hostFromURL(videoUrl))
+		} else {
+			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				audioUrl, audioErr = findReachableMediaUrl(playUrl.BestAudio.BaseUrl, playUrl.BestAudio.BackupUrl)
+				videoUrl, videoErr = findReachableMediaUrl(playUrl.BestVideo.BaseUrl, playUrl.BestVideo.BackupUrl)
 			}()
+			if playUrl.BestAudio != nil {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					audioUrl, audioErr = findReachableMediaUrl(playUrl.BestAudio.BaseUrl, playUrl.BestAudio.BackupUrl)
+				}()
+			}
+			wg.Wait()
 		}
-		wg.Wait()
 
 		if videoErr != nil {
-			if opts.SkipCdnCheck {
-				logf("[bilibili] 视频 CDN 本地探测均不可达，因 SkipCdnCheck 回退到 BaseUrl: %v", videoErr)
-				videoUrl = playUrl.BestVideo.BaseUrl
-			} else {
+			// 探测全失败不直接判死：CLI 的 HEAD 探测会被部分 CDN 以 403 拦截、
+			// 也会被本地 DNS 抖动带偏，误判时直接报错等于把能播的片子挡掉。
+			// 回退仍按「非 mcdn 优先」挑一条，交给播放器自己试。
+			videoUrl = pickPreferredMediaUrl(playUrl.BestVideo.BaseUrl, playUrl.BestVideo.BackupUrl)
+			if videoUrl == "" {
 				return nil, &ResolveError{Message: "无法找到可达的视频 CDN", Code: "CDN_UNREACHABLE"}
 			}
+			logf("[bilibili] 视频 CDN 本地探测均不可达，回退非 mcdn 候选 %s（%v）", hostFromURL(videoUrl), videoErr)
 		}
 		if playUrl.BestAudio != nil && audioErr != nil {
-			if opts.SkipCdnCheck {
-				logf("[bilibili] 音频 CDN 本地探测均不可达，因 SkipCdnCheck 回退到 BaseUrl: %v", audioErr)
-				audioUrl = playUrl.BestAudio.BaseUrl
-			} else {
-				// 非 SkipCdnCheck 模式下音频 CDN 不可达不阻断，但记录日志
-				logf("[bilibili] 音频 CDN 均不可达，尝试无音频播放: %v", audioErr)
-			}
+			audioUrl = pickPreferredMediaUrl(playUrl.BestAudio.BaseUrl, playUrl.BestAudio.BackupUrl)
+			logf("[bilibili] 音频 CDN 均不可达，回退非 mcdn 候选 %s（%v）", hostFromURL(audioUrl), audioErr)
 		}
 
 		videoCodec := ""
@@ -1800,9 +1871,9 @@ func resolvePgcVideo(opts ResolveOptions, epId, seasonId int64) (*ResolveResult,
 
 		var videoUrl, audioUrl string
 		if opts.SkipCdnCheck {
-			videoUrl = playUrl.BestVideo.BaseUrl
+			videoUrl = pickPreferredMediaUrl(playUrl.BestVideo.BaseUrl, playUrl.BestVideo.BackupUrl)
 			if playUrl.BestAudio != nil {
-				audioUrl = playUrl.BestAudio.BaseUrl
+				audioUrl = pickPreferredMediaUrl(playUrl.BestAudio.BaseUrl, playUrl.BestAudio.BackupUrl)
 			}
 		} else {
 			var videoErr, audioErr error
@@ -1821,12 +1892,12 @@ func resolvePgcVideo(opts ResolveOptions, epId, seasonId int64) (*ResolveResult,
 			}
 			wg.Wait()
 			if videoErr != nil {
-				// CLI 场景默认 SkipCdnCheck；此处保底回退 BaseUrl
-				logf("[bilibili-pgc] 视频 CDN 本地探测不可达，回退 BaseUrl: %v", videoErr)
-				videoUrl = playUrl.BestVideo.BaseUrl
+				videoUrl = pickPreferredMediaUrl(playUrl.BestVideo.BaseUrl, playUrl.BestVideo.BackupUrl)
+				logf("[bilibili-pgc] 视频 CDN 本地探测不可达，回退非 mcdn 候选 %s（%v）", hostFromURL(videoUrl), videoErr)
 			}
 			if playUrl.BestAudio != nil && audioErr != nil {
-				logf("[bilibili-pgc] 音频 CDN 均不可达，尝试无音频播放: %v", audioErr)
+				audioUrl = pickPreferredMediaUrl(playUrl.BestAudio.BaseUrl, playUrl.BestAudio.BackupUrl)
+				logf("[bilibili-pgc] 音频 CDN 均不可达，回退非 mcdn 候选 %s（%v）", hostFromURL(audioUrl), audioErr)
 			}
 		}
 

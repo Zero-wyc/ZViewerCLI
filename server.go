@@ -1013,8 +1013,11 @@ func (a *Agent) startHTTPServer() (*http.Server, error) {
 	// CORS 配置：使用 AllowedOriginFunc 回显具体 Origin 而非通配符 *。
 	// CLI 代理不需要浏览器发送 Cookie（本地配置已持有 Cookie），因此禁用 credentials，
 	// 避免浏览器因 Access-Control-Allow-Origin: * 与 Allow-Credentials: true 同时存在而拦截。
-	// CLI 仅监听 127.0.0.1，外部无法访问，回显任意 Origin 无安全风险。
-	handler := cors.New(cors.Options{
+	//
+	// 媒体路由必须允许任意 Origin：ZViewer 网页与 CLI 端口不同源，跨源取流是正常用法。
+	// 但带凭证的配置接口不能一起放开，改由 protectLocalSettings 校验 Host 与 Origin。
+	// 顺序很关键：它必须在 CORS 外层，否则预检请求会被 CORS 直接放行而不经过校验。
+	handler := protectLocalSettings(cors.New(cors.Options{
 		AllowOriginFunc: func(origin string) bool {
 			return true
 		},
@@ -1023,7 +1026,7 @@ func (a *Agent) startHTTPServer() (*http.Server, error) {
 		AllowCredentials: false,
 		AllowedHeaders:   []string{"Range", "Content-Type", "Authorization"},
 		ExposedHeaders:   []string{"Content-Range", "Accept-Ranges", "Content-Length"},
-	}).Handler(mux)
+	}).Handler(mux), a.port)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", a.port),

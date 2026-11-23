@@ -32,6 +32,15 @@ const (
 	liveReferer = "https://live.bilibili.com"
 )
 
+// /candidates 的入参约束：候选表只是失败换节点用的辅助数据，
+// 上限压得比较紧，避免一个畸形请求把内存撑大。
+const (
+	maxCandidatesPerTrack    = 16
+	maxBackupUrlCacheEntries = 256
+	candidateMaxBodyBytes    = 64 << 10
+	candidateMaxURLLength    = 2048
+)
+
 // proxyPassThroughHeaders 需要透传给客户端的上游响应头（与 backend http-proxy.ts 对齐）。
 var proxyPassThroughHeaders = []string{
 	"Content-Length",
@@ -125,6 +134,15 @@ func (a *Agent) setBackupUrls(primaryUrl string, candidates []string) {
 	}
 	a.backupUrlCacheMu.Lock()
 	defer a.backupUrlCacheMu.Unlock()
+	// 近似淘汰：缓存只用于失败换节点，丢一条最多多一次 502 直连，
+	// 不值得为它维护完整 LRU 链表。map 遍历顺序随机，删掉任意一条即可
+	// 阻止缓存无界增长（长时间播放不同视频时会持续写入）。
+	if len(a.backupUrlCache) >= maxBackupUrlCacheEntries {
+		for key := range a.backupUrlCache {
+			delete(a.backupUrlCache, key)
+			break
+		}
+	}
 	a.backupUrlCache[primaryUrl] = candidates
 }
 
@@ -326,6 +344,7 @@ func (a *Agent) setupServer() *http.ServeMux {
 	mux.HandleFunc("/api/dash-mpd", a.handleDashMpd)
 	mux.HandleFunc("/resolve", a.handleResolve)
 	mux.HandleFunc("/proxy", a.handleProxy)
+	mux.HandleFunc("/candidates", a.handleCandidates)
 
 	return mux
 }
@@ -737,6 +756,74 @@ func (a *Agent) handleResolve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// candidateItem 是一条主 URL 与它的回退候选（同一轨道上的不同 CDN 节点）。
+type candidateItem struct {
+	PrimaryUrl string   `json:"primaryUrl"`
+	BackupUrls []string `json:"backupUrls"`
+}
+
+// isProxyableMediaUrl 校验候选地址：只接受 http/https 且长度合理。
+func isProxyableMediaUrl(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > candidateMaxURLLength {
+		return false
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	return parsed.Host != ""
+}
+
+// handleCandidates 登记「主 URL → 候选 URL 列表」，供 /proxy 失败换节点。
+//
+// 房主直链模式（服务端解析 + 本地代理拉流）下，客户端只知道一个媒体地址，
+// 候选表不会被 /resolve 写入——某个 CDN 节点回 5xx 时 /proxy 没有节点可换，
+// 一个分段 502 就会让整段视频黑屏。前端解析成功后把服务端下发的候选 POST
+// 到这里，换节点的能力才真正闭环。
+func (a *Agent) handleCandidates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		jsonResponse(w, http.StatusMethodNotAllowed, map[string]any{"success": false, "message": "只支持 POST"})
+		return
+	}
+	var payload struct {
+		Items []candidateItem `json:"items"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, candidateMaxBodyBytes)).Decode(&payload); err != nil {
+		jsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求体解析失败"})
+		return
+	}
+
+	registered := 0
+	for _, item := range payload.Items {
+		primary := strings.TrimSpace(item.PrimaryUrl)
+		if !isProxyableMediaUrl(primary) {
+			continue
+		}
+		cleaned := make([]string, 0, len(item.BackupUrls))
+		for _, backup := range item.BackupUrls {
+			if !isProxyableMediaUrl(backup) {
+				continue
+			}
+			cleaned = append(cleaned, strings.TrimSpace(backup))
+			if len(cleaned) >= maxCandidatesPerTrack {
+				break
+			}
+		}
+		if len(cleaned) == 0 {
+			continue
+		}
+		a.setBackupUrls(primary, cleaned)
+		registered++
+	}
+	logf("[candidates] 登记候选表 %d/%d 条", registered, len(payload.Items))
+	jsonResponse(w, http.StatusOK, map[string]any{"success": true, "registered": registered})
 }
 
 func (a *Agent) handleProxy(w http.ResponseWriter, r *http.Request) {
